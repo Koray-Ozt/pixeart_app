@@ -11,7 +11,7 @@ class EraserTool(PencilTool):
     doğrudan PencilTool'dan miras alır ve sadece fırça vurma metodunu ezer.
     """
     
-    def _apply_brush(self, cx: int, cy: int, button: int) -> None:
+    def _apply_brush(self, cx: int, cy: int, button: Qt.MouseButton) -> None:
         doc = self.manager.document
         layer_idx = doc.active_layer_index
         if layer_idx < 0 or layer_idx >= len(doc.layers):

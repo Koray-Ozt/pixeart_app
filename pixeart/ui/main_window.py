@@ -17,7 +17,7 @@ from pixeart.ui.widgets.toolbar import ToolBarWidget
 from pixeart.ui.widgets.layer_panel import LayerPanel
 from pixeart.ui.widgets.color_palette import ColorPalette
 from pixeart.tools.manager import ToolManager
-from pixeart.tools.base import BrushShape
+from pixeart.tools.base_tool import BrushShape
 
 class MainWindow(QMainWindow):
     """
@@ -143,6 +143,7 @@ class MainWindow(QMainWindow):
         
         self.color_palette.primary_color_changed.connect(self._on_primary_color_changed)
         self.color_palette.secondary_color_changed.connect(self._on_secondary_color_changed)
+        self.tool_manager.color_palette = self.color_palette
         
         self.canvas_scene.pixel_clicked.connect(self.tool_manager.handle_press)
         self.canvas_scene.pixel_dragged.connect(self.tool_manager.handle_drag)
@@ -163,7 +164,8 @@ class MainWindow(QMainWindow):
             return
             
         dialog = ExportDialog(self.document, self)
-        dialog.exec()
+        if dialog.exec():
+            dialog.export_image()
 
     def _create_document(self, width: int, height: int):
         """Yeni bir boş belge oluşturur ve sistemi ayağa kaldırır."""

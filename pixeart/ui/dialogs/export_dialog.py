@@ -4,11 +4,15 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+from pixeart.core.document import Document
+from PyQt6.QtGui import QImage, QPainter, QColor
+
 class ExportDialog(QDialog):
-    def __init__(self, document_width: int, document_height: int, parent=None):
+    def __init__(self, document: Document, parent=None):
         super().__init__(parent)
-        self.document_width = document_width
-        self.document_height = document_height
+        self.document = document
+        self.document_width = document.width
+        self.document_height = document.height
         
         self.setWindowTitle("Dışa Aktar")
         self.setFixedSize(400, 320)
@@ -111,3 +115,28 @@ class ExportDialog(QDialog):
             self.export_path = file_path
             self.keep_transparency = self.bg_checkbox.isChecked()
             self.accept()
+
+    def export_image(self):
+        if not self.export_path:
+            return
+
+        w, h = self.document.width, self.document.height
+        image = QImage(w, h, QImage.Format.Format_ARGB32)
+        if self.keep_transparency and self.export_format == "PNG":
+            image.fill(QColor(0, 0, 0, 0))
+        else:
+            image.fill(QColor(255, 255, 255, 255))
+
+        for layer in self.document.layers:
+            if not layer.is_visible:
+                continue
+            for (x, y), color in layer.active_pixels.items():
+                if not color.is_transparent:
+                    image.setPixelColor(x, y, QColor(*color.to_rgba_tuple()))
+
+        if self.export_scale != 100:
+            new_w = int(w * (self.export_scale / 100.0))
+            new_h = int(h * (self.export_scale / 100.0))
+            image = image.scaled(new_w, new_h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+
+        image.save(self.export_path, self.export_format)

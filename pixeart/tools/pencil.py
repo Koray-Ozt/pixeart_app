@@ -2,7 +2,7 @@ from typing import Dict, Tuple, Optional
 from PyQt6.QtCore import Qt
 from pixeart.core.color import Color
 from pixeart.core.commands import DrawCommand
-from .base import BaseTool
+from .base_tool import BaseTool
 
 class PencilTool(BaseTool):
     """
@@ -17,30 +17,27 @@ class PencilTool(BaseTool):
         self.before_pixels: Dict[Tuple[int, int], Optional[Color]] = {}
         self.after_pixels: Dict[Tuple[int, int], Optional[Color]] = {}
 
-    def on_press(self, x: int, y: int, button: int) -> None:
+    def on_press(self, x: int, y: int, button: Qt.MouseButton) -> None:
         if not self.manager or not self.manager.document:
             return
             
         self.is_drawing = True
-        self.last_pos = (x, y)
         self.before_pixels.clear()
         self.after_pixels.clear()
-        
+        self.last_pos = (x, y)
         self._apply_brush(x, y, button)
 
-    def on_drag(self, x: int, y: int, button: int) -> None:
-        if not self.is_drawing or not self.manager or not self.manager.document:
+    def on_drag(self, x: int, y: int, button: Qt.MouseButton) -> None:
+        if not self.is_drawing or not self.last_pos:
             return
             
-        if self.last_pos:
-            # Fareyi çok hızlı çektiğinde arada atlanan pikselleri doldur
-            points = self._interpolate_line(self.last_pos[0], self.last_pos[1], x, y)
-            for px, py in points:
-                self._apply_brush(px, py, button)
-                
+        pixels_to_draw = self._interpolate_line(self.last_pos[0], self.last_pos[1], x, y)
+        for px, py in pixels_to_draw:
+            self._apply_brush(px, py, button)
+            
         self.last_pos = (x, y)
 
-    def on_release(self, x: int, y: int, button: int) -> None:
+    def on_release(self, x: int, y: int, button: Qt.MouseButton) -> None:
         if not self.is_drawing or not self.manager:
             return
             
@@ -58,7 +55,7 @@ class PencilTool(BaseTool):
             )
             self.manager.commit_command(command)
             
-    def _apply_brush(self, cx: int, cy: int, button: int) -> None:
+    def _apply_brush(self, cx: int, cy: int, button: Qt.MouseButton) -> None:
         """Piksel art motorunun en çok çalışan fonksiyonu: Fırçayı vurur."""
         doc = self.manager.document
         layer_idx = doc.active_layer_index

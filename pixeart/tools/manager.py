@@ -4,9 +4,11 @@ from PyQt6.QtCore import Qt
 from pixeart.core.color import Color
 from pixeart.core.history import History, Command
 from pixeart.core.document import Document
-from .base import BaseTool, BrushShape
+from .base_tool import BaseTool, BrushShape
 from .pencil import PencilTool
 from .eraser import EraserTool
+from .color_picker import ColorPickerTool
+from .fill import FillTool
 
 class ToolManager:
     """
@@ -17,11 +19,14 @@ class ToolManager:
         self.history = history
         self.document: Optional[Document] = None
         self.canvas_scene = None # UI Canvas referansı
+        self.color_palette = None # UI Color Palette referansı
         
         # Kayıtlı araçlar
         self.tools: Dict[str, BaseTool] = {
             "pencil": PencilTool(),
-            "eraser": EraserTool()
+            "eraser": EraserTool(),
+            "picker": ColorPickerTool(),
+            "fill": FillTool()
         }
         
         # Bağımlılık (Dependency) Enjeksiyonu
@@ -55,7 +60,7 @@ class ToolManager:
     def set_secondary_color(self, qt_color: QColor):
         self.secondary_color = Color(qt_color.red(), qt_color.green(), qt_color.blue(), qt_color.alpha())
 
-    def get_active_color(self, button: int) -> Color:
+    def get_active_color(self, button: Qt.MouseButton) -> Color:
         # Sol tık = Birincil Renk, Sağ tık veya Orta = İkincil Renk
         if button == Qt.MouseButton.RightButton:
             return self.secondary_color
@@ -67,17 +72,24 @@ class ToolManager:
             qt_color = QColor(0, 0, 0, 0) if color is None else QColor(*color.to_rgba_tuple())
             self.canvas_scene.draw_pixel(x, y, qt_color)
             
+    def notify_color_picked(self, qt_color: QColor, button: Qt.MouseButton):
+        if hasattr(self, 'color_palette') and self.color_palette:
+            if button == Qt.MouseButton.LeftButton:
+                self.color_palette.current_colors.set_primary(qt_color)
+            elif button == Qt.MouseButton.RightButton:
+                self.color_palette.current_colors.set_secondary(qt_color)
+            
     def commit_command(self, command: Command):
         """Fırça darbesi (Stroke) tamamlandığında geri alınabilir işlem olarak kaydeder."""
         # Undo stack'e basıp sistemi notify eder.
         self.history.execute(command)
         
     # --- Olay (Event) Yönlendirmeleri ---
-    def handle_press(self, x: int, y: int, button: int):
+    def handle_press(self, x: int, y: int, button: Qt.MouseButton):
         self.active_tool.on_press(x, y, button)
         
-    def handle_drag(self, x: int, y: int, button: int):
+    def handle_drag(self, x: int, y: int, button: Qt.MouseButton):
         self.active_tool.on_drag(x, y, button)
         
-    def handle_release(self, x: int, y: int, button: int):
+    def handle_release(self, x: int, y: int, button: Qt.MouseButton):
         self.active_tool.on_release(x, y, button)
