@@ -280,3 +280,4 @@ class MainWindow(QMainWindow):
         # Ekranı komple tazeleyebiliriz, ancak ToolManager zaten hızlı güncellemeyi yapıyor.
         # Undo/Redo sonucu gerçek bir render almalıyız çünkü çoklu piksel değişimi oluyor.
         self.canvas_scene.sync_layers()
+        self.layer_panel.update_thumbnails()

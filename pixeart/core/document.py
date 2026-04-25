@@ -65,21 +65,15 @@ class Document:
         else:
             raise IndexError("Invalid layer index.")
 
-    def move_layer_up(self, index: int) -> None:
-        if 0 <= index < len(self._layers) - 1:
-            self._layers[index], self._layers[index+1] = self._layers[index+1], self._layers[index]
-            if self._active_layer_index == index:
-                self._active_layer_index += 1
-            elif self._active_layer_index == index + 1:
+    def reorder_layer(self, source_index: int, dest_index: int) -> None:
+        if 0 <= source_index < len(self._layers) and 0 <= dest_index < len(self._layers):
+            layer = self._layers.pop(source_index)
+            self._layers.insert(dest_index, layer)
+            if self._active_layer_index == source_index:
+                self._active_layer_index = dest_index
+            elif source_index < self._active_layer_index <= dest_index:
                 self._active_layer_index -= 1
-            self.is_dirty = True
-
-    def move_layer_down(self, index: int) -> None:
-        if 0 < index < len(self._layers):
-            self._layers[index], self._layers[index-1] = self._layers[index-1], self._layers[index]
-            if self._active_layer_index == index:
-                self._active_layer_index -= 1
-            elif self._active_layer_index == index - 1:
+            elif dest_index <= self._active_layer_index < source_index:
                 self._active_layer_index += 1
             self.is_dirty = True
 
@@ -100,6 +94,7 @@ class Document:
                 "is_visible": layer.is_visible,
                 "is_locked": layer.is_locked,
                 "opacity": layer.opacity,
+                "blend_mode": getattr(layer, "blend_mode", "Normal"),
                 "pixels": []
             }
             for (x, y), color in layer.active_pixels.items():
@@ -132,6 +127,7 @@ class Document:
             layer.is_visible = layer_data.get("is_visible", True)
             layer.is_locked = layer_data.get("is_locked", False)
             layer.opacity = layer_data.get("opacity", 1.0)
+            layer.blend_mode = layer_data.get("blend_mode", "Normal")
             
             for p in layer_data.get("pixels", []):
                 layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
