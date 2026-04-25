@@ -150,6 +150,13 @@ class ToolBarWidget(QWidget):
         if tool_code:
             self.tool_changed.emit(tool_code)
             
+    def select_tool(self, code: str):
+        for btn, btn_code in self.tool_map.items():
+            if btn_code == code:
+                btn.setChecked(True)
+                self._on_tool_clicked(btn)
+                break
+            
     def get_current_brush_size(self) -> int:
         return self.spin_size.value()
 

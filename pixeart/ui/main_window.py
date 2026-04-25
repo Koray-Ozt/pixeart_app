@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, 
-    QStatusBar, QLabel, QDockWidget, QMenuBar
+    QStatusBar, QLabel, QDockWidget, QMenuBar,
+    QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
 
 from pixeart.core.history import History
 from pixeart.core.document import Document
@@ -42,6 +43,10 @@ class MainWindow(QMainWindow):
         
         self._init_ui()
         self._connect_signals()
+        
+        QShortcut(QKeySequence("B"), self).activated.connect(lambda: self.toolbar_widget.select_tool("pencil"))
+        QShortcut(QKeySequence("E"), self).activated.connect(lambda: self.toolbar_widget.select_tool("eraser"))
+        QShortcut(QKeySequence("G"), self).activated.connect(lambda: self.toolbar_widget.select_tool("fill"))
         
     def _init_ui(self):
         """Arayüz bileşenlerini sırasıyla oluşturur."""
@@ -105,6 +110,16 @@ class MainWindow(QMainWindow):
         new_action.triggered.connect(self._on_new_file)
         file_menu.addAction(new_action)
         
+        open_action = QAction("Aç...", self)
+        open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self._on_open_file)
+        file_menu.addAction(open_action)
+        
+        save_action = QAction("Kaydet", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self._on_save_file)
+        file_menu.addAction(save_action)
+        
         export_action = QAction("Dışa Aktar...", self)
         export_action.setShortcut("Ctrl+E")
         export_action.triggered.connect(self._on_export)
@@ -166,6 +181,45 @@ class MainWindow(QMainWindow):
         dialog = ExportDialog(self.document, self)
         if dialog.exec():
             dialog.export_image()
+            
+    def _on_save_file(self):
+        if not self.document:
+            return
+            
+        file_path = self.document.file_path
+        if not file_path:
+            file_path, _ = QFileDialog.getSaveFileName(self, "Projeyi Kaydet", "", "PixeArt Projesi (*.pixe)")
+            if not file_path:
+                return
+                
+        try:
+            self.document.save_to_file(file_path)
+            self.statusBar.showMessage("Proje başarıyla kaydedildi.", 3000)
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Kaydetme hatası:\\n{str(e)}")
+
+    def _on_open_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Proje Aç", "", "PixeArt Projesi (*.pixe)")
+        if not file_path:
+            return
+            
+        try:
+            doc = Document.load_from_file(file_path)
+            self.document = doc
+            self.canvas_scene.set_document(self.document)
+            self.layer_panel.set_document(self.document)
+            self.tool_manager.set_document(self.document)
+            self.canvas_view.reset_view()
+            
+            # History'yi sıfırla
+            self.history = History()
+            self.history.on_history_changed = self._update_undo_redo_actions
+            self.tool_manager.history = self.history
+            self._update_undo_redo_actions()
+            
+            self.statusBar.showMessage("Proje başarıyla yüklendi.", 3000)
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Dosya açma hatası:\\n{str(e)}")
 
     def _create_document(self, width: int, height: int):
         """Yeni bir boş belge oluşturur ve sistemi ayağa kaldırır."""

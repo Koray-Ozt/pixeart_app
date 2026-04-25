@@ -85,3 +85,62 @@ class Document:
 
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self._width and 0 <= y < self._height
+
+    def save_to_file(self, file_path: str) -> None:
+        data = {
+            "version": 1,
+            "width": self._width,
+            "height": self._height,
+            "active_layer_index": self._active_layer_index,
+            "layers": []
+        }
+        for layer in self._layers:
+            layer_data = {
+                "name": layer.name,
+                "is_visible": layer.is_visible,
+                "is_locked": layer.is_locked,
+                "opacity": layer.opacity,
+                "pixels": []
+            }
+            for (x, y), color in layer.active_pixels.items():
+                layer_data["pixels"].append({
+                    "x": x, "y": y,
+                    "r": color.r, "g": color.g, "b": color.b, "a": color.a
+                })
+            data["layers"].append(layer_data)
+            
+        import json
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+            
+        self.file_path = file_path
+        self.is_dirty = False
+
+    @classmethod
+    def load_from_file(cls, file_path: str) -> "Document":
+        import json
+        from .color import Color
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        doc = cls(data["width"], data["height"])
+        doc._active_layer_index = data.get("active_layer_index", 0)
+        
+        for layer_data in data.get("layers", []):
+            layer = Layer(layer_data["name"])
+            layer.is_visible = layer_data.get("is_visible", True)
+            layer.is_locked = layer_data.get("is_locked", False)
+            layer.opacity = layer_data.get("opacity", 1.0)
+            
+            for p in layer_data.get("pixels", []):
+                layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
+                
+            doc.add_layer(layer)
+            
+        # Eğer add_layer active_layer_index'i değiştiriyorsa geri düzeltelim
+        doc._active_layer_index = data.get("active_layer_index", 0)
+            
+        doc.file_path = file_path
+        doc.is_dirty = False
+        return doc
