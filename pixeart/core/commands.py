@@ -42,3 +42,40 @@ class DrawCommand(Command):
             else:
                 layer.set_pixel(x, y, color)
         self.document.is_dirty = True
+
+class ModifyLayerCommand(Command):
+    """
+    Tüm efekt, döndürme ve kaydırma işlemleri için evrensel geri alma komutu.
+    İşlem öncesi ve sonrası tüm katman piksellerini tutar.
+    """
+    def __init__(self, document: Document, layer_index: int, 
+                 before_pixels: Dict[Tuple[int, int], Color], 
+                 after_pixels: Dict[Tuple[int, int], Color]):
+        self.document = document
+        self.layer_index = layer_index
+        self.before_pixels = before_pixels
+        self.after_pixels = after_pixels
+
+    def execute(self) -> None:
+        if not (0 <= self.layer_index < len(self.document.layers)):
+            return
+            
+        layer = self.document.layers[self.layer_index]
+        layer.clear()
+        
+        for (x, y), color in self.after_pixels.items():
+            if not color.is_transparent:
+                layer.set_pixel(x, y, color)
+        self.document.is_dirty = True
+
+    def undo(self) -> None:
+        if not (0 <= self.layer_index < len(self.document.layers)):
+            return
+            
+        layer = self.document.layers[self.layer_index]
+        layer.clear()
+        
+        for (x, y), color in self.before_pixels.items():
+            if not color.is_transparent:
+                layer.set_pixel(x, y, color)
+        self.document.is_dirty = True

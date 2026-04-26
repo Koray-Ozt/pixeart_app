@@ -164,13 +164,13 @@ class MainWindow(QMainWindow):
         # --- Düzen Menüsü ---
         edit_menu = menubar.addMenu("Düzen")
 
-        self.undo_action = QAction("Geri Al", self)
+        self.undo_action = QAction("Geri Al (Undo)", self)
         self.undo_action.setShortcut("Ctrl+Z")
         self.undo_action.setEnabled(False)
         self.undo_action.triggered.connect(self.history.undo)
         edit_menu.addAction(self.undo_action)
 
-        self.redo_action = QAction("İleri Al", self)
+        self.redo_action = QAction("İleri Al (Redo)", self)
         self.redo_action.setShortcut("Ctrl+Y")
         self.redo_action.setEnabled(False)
         self.redo_action.triggered.connect(self.history.redo)
@@ -178,25 +178,108 @@ class MainWindow(QMainWindow):
 
         edit_menu.addSeparator()
 
-        copy_action = QAction("Kopyala", self)
+        cut_action = QAction("Kes (Cut)", self)
+        cut_action.setShortcut("Ctrl+X")
+        cut_action.triggered.connect(self._on_cut)
+        edit_menu.addAction(cut_action)
+
+        copy_action = QAction("Kopyala (Copy)", self)
         copy_action.setShortcut("Ctrl+C")
         copy_action.triggered.connect(self._on_copy)
         edit_menu.addAction(copy_action)
 
-        paste_action = QAction("Yapıştır", self)
+        paste_action = QAction("Yapıştır (Paste)", self)
         paste_action.setShortcut("Ctrl+V")
         paste_action.triggered.connect(self._on_paste)
         edit_menu.addAction(paste_action)
 
-        delete_action = QAction("Seçimi Sil", self)
-        delete_action.setShortcut("Delete")
+        delete_action = QAction("Sil (Delete)", self)
+        delete_action.setShortcut("Del")
         delete_action.triggered.connect(self._on_delete_selection)
         edit_menu.addAction(delete_action)
 
-        deselect_action = QAction("Seçimi Kaldır", self)
+        deselect_action = QAction("Seçimi Kaldır (Deselect)", self)
         deselect_action.setShortcut("Ctrl+D")
         deselect_action.triggered.connect(self._on_deselect)
         edit_menu.addAction(deselect_action)
+
+        edit_menu.addSeparator()
+
+        # --- Transform ---
+        transform_menu = edit_menu.addMenu("Dönüştür (Transform)")
+        
+        flip_h = QAction("Yatay Çevir (Flip Horizontal)", self)
+        flip_h.triggered.connect(lambda: self._apply_transform("flip_h"))
+        transform_menu.addAction(flip_h)
+        
+        flip_v = QAction("Dikey Çevir (Flip Vertical)", self)
+        flip_v.triggered.connect(lambda: self._apply_transform("flip_v"))
+        transform_menu.addAction(flip_v)
+        
+        rot_180 = QAction("180° Döndür", self)
+        rot_180.triggered.connect(lambda: self._apply_transform("rot_180"))
+        transform_menu.addAction(rot_180)
+        
+        rot_90cw = QAction("90° Saat Yönünde (CW)", self)
+        rot_90cw.triggered.connect(lambda: self._apply_transform("rot_90cw"))
+        transform_menu.addAction(rot_90cw)
+        
+        rot_90ccw = QAction("90° Saat Yönü Tersi (CCW)", self)
+        rot_90ccw.triggered.connect(lambda: self._apply_transform("rot_90ccw"))
+        transform_menu.addAction(rot_90ccw)
+
+        # --- Shift ---
+        shift_menu = edit_menu.addMenu("Kaydır (Shift)")
+        shift_left = QAction("Sola (Left)", self)
+        shift_left.triggered.connect(lambda: self._apply_transform("shift_left"))
+        shift_menu.addAction(shift_left)
+        
+        shift_right = QAction("Sağa (Right)", self)
+        shift_right.triggered.connect(lambda: self._apply_transform("shift_right"))
+        shift_menu.addAction(shift_right)
+        
+        shift_up = QAction("Yukarı (Up)", self)
+        shift_up.triggered.connect(lambda: self._apply_transform("shift_up"))
+        shift_menu.addAction(shift_up)
+        
+        shift_down = QAction("Aşağı (Down)", self)
+        shift_down.triggered.connect(lambda: self._apply_transform("shift_down"))
+        shift_menu.addAction(shift_down)
+
+        edit_menu.addSeparator()
+
+        # --- Effects & Colors ---
+        replace_color_action = QAction("Rengi Değiştir... (Replace Color)", self)
+        replace_color_action.setShortcut("Shift+R")
+        replace_color_action.triggered.connect(self._on_replace_color)
+        edit_menu.addAction(replace_color_action)
+
+        invert_action = QAction("Renkleri Tersine Çevir (Invert)", self)
+        invert_action.setShortcut("Ctrl+I")
+        invert_action.triggered.connect(lambda: self._apply_effect("invert"))
+        edit_menu.addAction(invert_action)
+        
+        grayscale_action = QAction("Siyah-Beyaz (Grayscale)", self)
+        grayscale_action.triggered.connect(lambda: self._apply_effect("grayscale"))
+        edit_menu.addAction(grayscale_action)
+
+        adj_menu = edit_menu.addMenu("Ayarlar (Adjustments)")
+        bc_action = QAction("Parlaklık / Kontrast...", self)
+        bc_action.triggered.connect(self._on_brightness_contrast)
+        adj_menu.addAction(bc_action)
+        
+        hs_action = QAction("Ton / Doygunluk (Hue/Sat)...", self)
+        hs_action.triggered.connect(self._on_hue_saturation)
+        adj_menu.addAction(hs_action)
+
+        fx_menu = edit_menu.addMenu("Efektler (FX)")
+        outline_action = QAction("Dış Çizgi (Outline)...", self)
+        outline_action.triggered.connect(self._on_outline)
+        fx_menu.addAction(outline_action)
+        
+        conv_action = QAction("Matris Filtresi (Convolution)...", self)
+        conv_action.triggered.connect(self._on_convolution)
+        fx_menu.addAction(conv_action)
 
         # --- Görünüm Menüsü ---
         view_menu = menubar.addMenu("Görünüm")
@@ -410,3 +493,135 @@ class MainWindow(QMainWindow):
         self.canvas_scene.sync_layers()
         self.layer_panel.update_thumbnails()
         self.navigator.update_preview()
+
+    def _on_cut(self):
+        self._on_copy()
+        self._on_delete_selection()
+        
+    # --- Transform İşlemleri ---
+    def _apply_transform(self, t_type: str):
+        if not self.document or self.document.active_layer_index < 0: return
+        
+        idx = self.document.active_layer_index
+        layer = self.document.layers[idx]
+        before_pixels = layer.active_pixels.copy()
+        
+        if t_type == "flip_h":
+            after_pixels = self.document.get_flipped_horizontal(before_pixels)
+        elif t_type == "flip_v":
+            after_pixels = self.document.get_flipped_vertical(before_pixels)
+        elif t_type == "rot_180":
+            after_pixels = self.document.get_rotated(before_pixels, 180)
+        elif t_type == "rot_90cw":
+            after_pixels = self.document.get_rotated(before_pixels, 90)
+        elif t_type == "rot_90ccw":
+            after_pixels = self.document.get_rotated(before_pixels, 270)
+        elif t_type == "shift_left":
+            after_pixels = self.document.get_shifted(before_pixels, -1, 0)
+        elif t_type == "shift_right":
+            after_pixels = self.document.get_shifted(before_pixels, 1, 0)
+        elif t_type == "shift_up":
+            after_pixels = self.document.get_shifted(before_pixels, 0, -1)
+        elif t_type == "shift_down":
+            after_pixels = self.document.get_shifted(before_pixels, 0, 1)
+        else:
+            return
+            
+        from pixeart.core.commands import ModifyLayerCommand
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels, after_pixels)
+        self.tool_manager.commit_command(cmd)
+
+    # --- Hızlı Efekt İşlemleri ---
+    def _apply_effect(self, e_type: str):
+        if not self.document or self.document.active_layer_index < 0: return
+        
+        idx = self.document.active_layer_index
+        layer = self.document.layers[idx]
+        before_pixels = layer.active_pixels.copy()
+        
+        from pixeart.core.effects_logic import invert_colors, grayscale
+        if e_type == "invert":
+            after_pixels = invert_colors(before_pixels)
+        elif e_type == "grayscale":
+            after_pixels = grayscale(before_pixels)
+        else:
+            return
+            
+        from pixeart.core.commands import ModifyLayerCommand
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels, after_pixels)
+        self.tool_manager.commit_command(cmd)
+
+    # --- Diyaloglu Efekt İşlemleri (Preview Destekli) ---
+    def _apply_dialog_effect(self, dialog_class, effect_func, initial_args=None):
+        if not self.document or self.document.active_layer_index < 0: return
+        
+        layer_idx = self.document.active_layer_index
+        layer = self.document.layers[layer_idx]
+        original_pixels = layer.active_pixels.copy()
+        
+        if initial_args is None: initial_args = {}
+        dialog = dialog_class(**initial_args, parent=self)
+        
+        def apply_preview(is_active, args):
+            layer.clear()
+            if is_active:
+                new_pixels = effect_func(original_pixels, **args)
+                for (x, y), c in new_pixels.items():
+                    if not c.is_transparent:
+                        layer.set_pixel(x, y, c)
+            else:
+                for (x, y), c in original_pixels.items():
+                    if not c.is_transparent:
+                        layer.set_pixel(x, y, c)
+            self.canvas_scene.sync_layers()
+            self.navigator.update_preview()
+            
+        dialog.preview_requested.connect(apply_preview)
+        
+        if dialog.exec():
+            args = dialog._get_args()
+            new_pixels = effect_func(original_pixels, **args)
+            
+            # Commit için orijinali geri yükle
+            layer.clear()
+            for (x, y), c in original_pixels.items():
+                if not c.is_transparent:
+                    layer.set_pixel(x, y, c)
+                
+            from pixeart.core.commands import ModifyLayerCommand
+            cmd = ModifyLayerCommand(self.document, layer_idx, original_pixels, new_pixels)
+            self.tool_manager.commit_command(cmd)
+        else:
+            # İptal edildi, eski haline dön
+            apply_preview(False, {})
+
+    def _on_replace_color(self):
+        from pixeart.ui.dialogs.effects_dialogs import ReplaceColorDialog
+        from pixeart.core.effects_logic import replace_color
+        prim = self.tool_manager.primary_color
+        t_color = QColor(prim.r, prim.g, prim.b, prim.a)
+        self._apply_dialog_effect(ReplaceColorDialog, replace_color, {"target_color": t_color})
+
+    def _on_brightness_contrast(self):
+        from pixeart.ui.dialogs.effects_dialogs import BrightnessContrastDialog
+        from pixeart.core.effects_logic import adjust_brightness_contrast
+        self._apply_dialog_effect(BrightnessContrastDialog, adjust_brightness_contrast)
+
+    def _on_hue_saturation(self):
+        from pixeart.ui.dialogs.effects_dialogs import HueSaturationDialog
+        from pixeart.core.effects_logic import adjust_hue_saturation
+        self._apply_dialog_effect(HueSaturationDialog, adjust_hue_saturation)
+
+    def _on_outline(self):
+        from pixeart.ui.dialogs.effects_dialogs import OutlineDialog
+        from pixeart.core.effects_logic import apply_outline
+        self._apply_dialog_effect(OutlineDialog, apply_outline)
+
+    def _on_convolution(self):
+        from pixeart.ui.dialogs.effects_dialogs import ConvolutionDialog
+        from pixeart.core.effects_logic import apply_convolution_matrix
+        
+        def effect_wrapper(pixels, matrix):
+            return apply_convolution_matrix(pixels, matrix, self.document.width, self.document.height)
+            
+        self._apply_dialog_effect(ConvolutionDialog, effect_wrapper)
