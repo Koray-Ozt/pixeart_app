@@ -269,13 +269,11 @@ class RecentColorsWidget(QWidget):
 # ---------------------------------------------------------------------------
 def _make_spin(label_text: str, max_val: int, value: int):
     lbl = QLabel(label_text)
-    lbl.setFixedWidth(14)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setStyleSheet("color:#aaa; font-size:11px; font-weight:bold;")
     spin = QSpinBox()
     spin.setRange(0, max_val)
     spin.setValue(value)
-    spin.setFixedWidth(52)
     spin.setStyleSheet("""
         QSpinBox { background:#1e1e1e; color:white; border:1px solid #444; border-radius:2px; padding:1px; font-size:11px; }
         QSpinBox:focus { border:1px solid #007acc; }

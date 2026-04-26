@@ -134,94 +134,17 @@ class LandingPage(QWidget):
         ver.setStyleSheet("color: #3a4a60; font-size: 11px; background: transparent;")
         left_layout.addWidget(ver)
 
-        # ===================== SAĞ PANEL =====================
-        right_panel = QFrame()
-        right_panel.setStyleSheet("""
-            QFrame { background-color: #111827; }
-        """)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(40, 40, 40, 40)
-        right_layout.setSpacing(16)
-
-        recent_title = QLabel("Son Çalışmalar")
-        recent_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #d1d5db; background: transparent;")
-        right_layout.addWidget(recent_title)
-
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: #1f2937;")
-        right_layout.addWidget(sep)
-
-        self.recent_list = QListWidget()
-        self.recent_list.setStyleSheet("""
-            QListWidget {
-                background-color: transparent;
-                border: none;
-                outline: none;
-            }
-            QListWidget::item {
-                background-color: #1f2937;
-                border-radius: 8px;
-                padding: 12px 16px;
-                margin-bottom: 6px;
-                color: white;
-            }
-            QListWidget::item:hover {
-                background-color: #283548;
-                border: 1px solid #374151;
-            }
-            QListWidget::item:selected {
-                background-color: #1e3a5f;
-                border: 1px solid #3b82f6;
-            }
-        """)
-        self.recent_list.itemDoubleClicked.connect(self._on_recent_double_clicked)
-        right_layout.addWidget(self.recent_list)
-
-        # Sol ve sağ paneli yerleştir
-        left_panel.setFixedWidth(340)
+        # Sadece sol paneli yerleştir, genişliği sabit tutmuyoruz (esnek)
         root.addWidget(left_panel)
-        root.addWidget(right_panel, stretch=1)
 
         self._populate_recents()
 
     def _populate_recents(self):
-        self.recent_list.clear()
-        recents = load_recents()
-
-        if not recents:
-            empty = QLabel("Henüz açılmış bir proje yok.\nYeni Proje oluşturarak başlayın!")
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setStyleSheet("color: #4b5563; font-size: 13px; padding: 40px; background: transparent;")
-            container = QWidget()
-            cl = QVBoxLayout(container)
-            cl.addStretch()
-            cl.addWidget(empty)
-            cl.addStretch()
-            # Liste yerine placeholder göster
-            self.recent_list.hide()
-            self.recent_list.parentWidget().layout().addWidget(container)
-            self._empty_placeholder = container
-            return
-
-        if hasattr(self, '_empty_placeholder'):
-            self._empty_placeholder.hide()
-            self.recent_list.show()
-
-        for path in recents:
-            fname = os.path.basename(path)
-            folder = os.path.dirname(path)
-
-            item = QListWidgetItem()
-            item.setText(f"📄  {fname}\n     {folder}")
-            item.setData(Qt.ItemDataRole.UserRole, path)
-            item.setSizeHint(QSize(0, 60))
-            self.recent_list.addItem(item)
+        # Son çalışmalar listesi UI'dan kaldırıldığı için içi boş bırakıldı
+        pass
 
     def _on_recent_double_clicked(self, item: QListWidgetItem):
-        path = item.data(Qt.ItemDataRole.UserRole)
-        if path and os.path.exists(path):
-            self.open_recent_requested.emit(path)
+        pass
 
     def refresh(self):
-        self._populate_recents()
+        pass

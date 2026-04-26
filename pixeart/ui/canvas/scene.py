@@ -116,10 +116,10 @@ class CanvasScene(QGraphicsScene):
     def _setup_checkerboard_background(self):
         checker_size = 8
         pm = QPixmap(checker_size * 2, checker_size * 2)
-        pm.fill(QColor("#ffffff"))
+        pm.fill(QColor("#3a3a3a"))
         painter = QPainter(pm)
-        painter.fillRect(0, 0, checker_size, checker_size, QColor("#cccccc"))
-        painter.fillRect(checker_size, checker_size, checker_size, checker_size, QColor("#cccccc"))
+        painter.fillRect(0, 0, checker_size, checker_size, QColor("#454545"))
+        painter.fillRect(checker_size, checker_size, checker_size, checker_size, QColor("#454545"))
         painter.end()
         self.checker_brush = QBrush(pm)
 

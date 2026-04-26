@@ -1,6 +1,11 @@
 import math
-from typing import List, Optional
+import json
+import logging
+from typing import List, Optional, Tuple, Dict
 from .layer import Layer
+from .color import Color
+
+logger = logging.getLogger(__name__)
 
 class Document:
     def __init__(self, width: int, height: int):
@@ -173,6 +178,10 @@ class Document:
         return 0 <= x < self._width and 0 <= y < self._height
 
     def save_to_file(self, file_path: str) -> None:
+        """
+        Belgeyi .pixe (JSON) formatında diske yazar.
+        Atomik yazma: önce geçici dosyaya yaz, başarılıysa yer değiştir.
+        """
         data = {
             "version": 1,
             "width": self._width,
@@ -195,40 +204,76 @@ class Document:
                     "r": color.r, "g": color.g, "b": color.b, "a": color.a
                 })
             data["layers"].append(layer_data)
-            
-        import json
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-            
+        
+        import tempfile, os
+        tmp_fd = None
+        tmp_path = None
+        try:
+            dir_name = os.path.dirname(file_path) or "."
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pixe.tmp", dir=dir_name)
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                tmp_fd = None
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp_path, file_path)
+            tmp_path = None
+        except (OSError, IOError, TypeError, ValueError) as e:
+            logger.error("Dosya kaydedilemedi: %s — %s", file_path, e)
+            raise RuntimeError(f"Dosya kaydedilemedi: {e}") from e
+        finally:
+            if tmp_fd is not None:
+                try:
+                    os.close(tmp_fd)
+                except OSError:
+                    pass
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
         self.file_path = file_path
         self.is_dirty = False
 
     @classmethod
     def load_from_file(cls, file_path: str) -> "Document":
-        import json
-        from .color import Color
+        """
+        .pixe dosyasını okuyup Document nesnesi döndürür.
+        Bozuk / eksik verili dosyalarda anlaşılır hata fırlatır.
+        """
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Dosya bozuk (JSON hatası): {e}") from e
+        except (OSError, IOError) as e:
+            raise RuntimeError(f"Dosya okunamadı: {e}") from e
         
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
-        doc = cls(data["width"], data["height"])
-        doc._active_layer_index = data.get("active_layer_index", 0)
+        if not isinstance(data, dict):
+            raise RuntimeError("Dosya formatı geçersiz: kök öğe dict olmalı.")
+        for key in ("width", "height"):
+            if key not in data or not isinstance(data[key], int) or data[key] <= 0:
+                raise RuntimeError(f"Dosya formatı geçersiz: '{key}' eksik veya hatalı.")
         
-        for layer_data in data.get("layers", []):
-            layer = Layer(layer_data["name"])
-            layer.is_visible = layer_data.get("is_visible", True)
-            layer.is_locked = layer_data.get("is_locked", False)
-            layer.opacity = layer_data.get("opacity", 1.0)
-            layer.blend_mode = layer_data.get("blend_mode", "Normal")
+        try:
+            doc = cls(data["width"], data["height"])
+            doc._active_layer_index = data.get("active_layer_index", 0)
             
-            for p in layer_data.get("pixels", []):
-                layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
+            for layer_data in data.get("layers", []):
+                layer = Layer(layer_data.get("name", "Katman"))
+                layer.is_visible = layer_data.get("is_visible", True)
+                layer.is_locked = layer_data.get("is_locked", False)
+                layer.opacity = layer_data.get("opacity", 1.0)
+                layer.blend_mode = layer_data.get("blend_mode", "Normal")
                 
-            doc.add_layer(layer)
-            
-        # Eğer add_layer active_layer_index'i değiştiriyorsa geri düzeltelim
-        doc._active_layer_index = data.get("active_layer_index", 0)
-            
-        doc.file_path = file_path
-        doc.is_dirty = False
-        return doc
+                for p in layer_data.get("pixels", []):
+                    layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
+                    
+                doc.add_layer(layer)
+                
+            doc._active_layer_index = data.get("active_layer_index", 0)
+                
+            doc.file_path = file_path
+            doc.is_dirty = False
+            return doc
+        except (KeyError, TypeError, ValueError) as e:
+            raise RuntimeError(f"Dosya verileri bozuk: {e}") from e

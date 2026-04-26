@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QStatusBar, QLabel, QDockWidget, QMenuBar,
     QFileDialog, QMessageBox, QScrollArea
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QShortcut, QKeySequence
 
 from pixeart.core.history import History
@@ -34,6 +34,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PixeArt - Modern Pixel Art Editörü")
         self.resize(1280, 720)
+
+        import os
+        from PyQt6.QtGui import QIcon
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "resources", "icons", "logo.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         # Proje Durumu (Core State)
         self.document = None
@@ -67,6 +73,36 @@ class MainWindow(QMainWindow):
         target_widths = [target_width, target_width, target_width, target_width]
         docks = [self.layers_dock, self.color_dock, self.navigator_dock, self.history_dock]
         self.resizeDocks(docks, target_widths, Qt.Orientation.Horizontal)
+        
+        # Position floating navigator dock at top right if it is floating
+        QTimer.singleShot(0, self._position_navigator)
+
+    def _position_navigator(self):
+        if self.navigator_dock.isFloating():
+            geom = self.geometry()
+            dock_geom = self.navigator_dock.geometry()
+            self.navigator_dock.move(geom.right() - dock_geom.width() - 40, geom.top() + 60)
+
+    def closeEvent(self, event):
+        """Uygulamadan çıkarken kaydedilmemiş değişiklikleri kontrol et."""
+        if self.document and self.document.is_dirty:
+            reply = QMessageBox.question(
+                self, "Kaydedilmemiş Değişiklikler",
+                "Kaydedilmemiş değişiklikler var.\nÇıkmadan önce kaydetmek ister misiniz?",
+                QMessageBox.StandardButton.Save |
+                QMessageBox.StandardButton.Discard |
+                QMessageBox.StandardButton.Cancel
+            )
+            if reply == QMessageBox.StandardButton.Save:
+                self._on_save_file()
+                if self.document and self.document.is_dirty:
+                    # Kullanıcı kaydetme diyalogunu iptal ettiyse
+                    event.ignore()
+                    return
+            elif reply == QMessageBox.StandardButton.Cancel:
+                event.ignore()
+                return
+        event.accept()
 
     def _init_ui(self):
         """Arayüz bileşenlerini sırasıyla oluşturur."""
@@ -97,11 +133,11 @@ class MainWindow(QMainWindow):
         """Bağımsız Widget'ları Ana Pencere üzerindeki Dock'lara bağlar."""
         # 1. Araçlar
         self.tools_dock = QDockWidget("Araçlar", self)
-        self.tools_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.tools_dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
         self.tools_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetFloatable | QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.toolbar_widget = ToolBarWidget()
         self.tools_dock.setWidget(self.toolbar_widget)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.tools_dock)
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.tools_dock)
 
         # 2. Katmanlar
         def create_scrollable_dock(dock_widget, inner_widget):
@@ -125,7 +161,7 @@ class MainWindow(QMainWindow):
         self.color_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.color_palette = ColorPalette()
         create_scrollable_dock(self.color_dock, self.color_palette)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.color_dock)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.color_dock)
 
         # 4. Navigator
         self.navigator_dock = QDockWidget("Gezgin", self)
@@ -134,6 +170,7 @@ class MainWindow(QMainWindow):
         self.navigator.setMinimumHeight(200) # Navigator için özel min boyut
         self.navigator.setMinimumWidth(200)
         self.navigator_dock.setWidget(self.navigator) # Navigator kendi resize mantığına sahip
+        self.navigator_dock.setFloating(True) # Varsayılan olarak yüzer modda başlat
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.navigator_dock)
 
         # 5. Geçmiş (History)
@@ -151,17 +188,21 @@ class MainWindow(QMainWindow):
         # --- Dosya Menüsü ---
         file_menu = menubar.addMenu("Dosya")
 
-        new_action = QAction("Yeni...", self)
+        import os
+        icon_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "resources", "icons")
+        from PyQt6.QtGui import QIcon
+
+        new_action = QAction(QIcon(os.path.join(icon_dir, "new.png")), "Yeni...", self)
         new_action.setShortcut("Ctrl+N")
         new_action.triggered.connect(self._on_new_file)
         file_menu.addAction(new_action)
 
-        open_action = QAction("Aç...", self)
+        open_action = QAction(QIcon(os.path.join(icon_dir, "open.png")), "Aç...", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self._on_open_file)
         file_menu.addAction(open_action)
 
-        save_action = QAction("Kaydet", self)
+        save_action = QAction(QIcon(os.path.join(icon_dir, "save.png")), "Kaydet", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self._on_save_file)
         file_menu.addAction(save_action)
@@ -350,6 +391,16 @@ class MainWindow(QMainWindow):
 
         # --- Görünüm (View) Menüsü ---
         view_menu = menubar.addMenu("Görünüm")
+
+        # -- Paneller (Panels) Alt Menüsü --
+        panels_menu = view_menu.addMenu("Paneller")
+        panels_menu.addAction(self.tools_dock.toggleViewAction())
+        panels_menu.addAction(self.layers_dock.toggleViewAction())
+        panels_menu.addAction(self.color_dock.toggleViewAction())
+        panels_menu.addAction(self.navigator_dock.toggleViewAction())
+        panels_menu.addAction(self.history_dock.toggleViewAction())
+
+        view_menu.addSeparator()
 
         # -- Show (Göster) Alt Menüsü --
         show_menu = view_menu.addMenu("Göster (Show)")
