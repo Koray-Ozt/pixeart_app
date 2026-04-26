@@ -155,3 +155,34 @@ def apply_convolution_matrix(pixels: Dict[Tuple[int, int], Color], matrix: List[
         new_pixels[(x, y)] = Color(clamp(r_sum), clamp(g_sum), clamp(b_sum), color.a)
         
     return new_pixels
+
+def apply_despeckle(pixels: Dict[Tuple[int, int], Color], width: int, height: int) -> Dict[Tuple[int, int], Color]:
+    # 3x3 Median filter
+    new_pixels = {}
+    
+    for (x, y), color in pixels.items():
+        if color.is_transparent:
+            new_pixels[(x, y)] = color
+            continue
+            
+        r_list, g_list, b_list = [], [], []
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < width and 0 <= ny < height and (nx, ny) in pixels:
+                    c = pixels[(nx, ny)]
+                    if not c.is_transparent:
+                        r_list.append(c.r)
+                        g_list.append(c.g)
+                        b_list.append(c.b)
+                        
+        if not r_list:
+            new_pixels[(x, y)] = color
+        else:
+            r_list.sort()
+            g_list.sort()
+            b_list.sort()
+            mid = len(r_list) // 2
+            new_pixels[(x, y)] = Color(r_list[mid], g_list[mid], b_list[mid], color.a)
+            
+    return new_pixels

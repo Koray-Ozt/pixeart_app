@@ -87,6 +87,7 @@ class CanvasScene(QGraphicsScene):
     pixel_clicked = pyqtSignal(int, int, Qt.MouseButton)
     pixel_dragged = pyqtSignal(int, int, Qt.MouseButton)
     pixel_released = pyqtSignal(int, int, Qt.MouseButton)
+    color_picked = pyqtSignal(QColor)
 
     def __init__(self, document: Document = None, parent=None):
         super().__init__(parent)
@@ -100,6 +101,8 @@ class CanvasScene(QGraphicsScene):
         self._ants_timer = QTimer()
         self._ants_timer.timeout.connect(self._advance_ants)
         self._setup_checkerboard_background()
+        self.show_layer_edges = False
+        self.show_selection_edges = True
 
         if self.document:
             self.setSceneRect(0, 0, document.width, document.height)
@@ -179,7 +182,16 @@ class CanvasScene(QGraphicsScene):
         self.update()
 
     def drawForeground(self, painter: QPainter, rect: QRectF):
-        if self._selection_rect:
+        # Layer Edges
+        if self.show_layer_edges and self.document:
+            pen = QPen(QColor(100, 200, 255, 120))
+            pen.setWidth(0)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.sceneRect())
+
+        # Selection Edges (karınca sürüsü)
+        if self.show_selection_edges and self._selection_rect:
             pen = QPen(QColor(255, 255, 255), 0)
             pen.setDashPattern([4, 4])
             pen.setDashOffset(self._ants_offset)
@@ -210,8 +222,23 @@ class CanvasScene(QGraphicsScene):
         if not self.document:
             super().mousePressEvent(event)
             return
+            
         pos = event.scenePos()
         x, y = int(pos.x()), int(pos.y())
+        
+        if getattr(self, "picking_target_color", False):
+            if self.document.in_bounds(x, y):
+                # En üstteki görünür katmandan rengi al
+                picked = QColor(0, 0, 0, 0)
+                for layer in reversed(self.document.layers):
+                    if layer.is_visible:
+                        c = layer.get_pixel(x, y)
+                        if not c.is_transparent:
+                            picked = QColor(c.r, c.g, c.b, c.a)
+                            break
+                self.color_picked.emit(picked)
+            return
+            
         if self.document.in_bounds(x, y):
             self.pixel_clicked.emit(x, y, event.button())
         super().mousePressEvent(event)

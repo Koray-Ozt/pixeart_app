@@ -7,12 +7,13 @@ from pixeart.core.color import Color
 class MoveSelectionCommand(Command):
     def __init__(self, document: Document, layer_index: int,
                  pixels: Dict[Tuple[int, int], Optional[Color]],
-                 dx: int, dy: int):
+                 dx: int, dy: int, name: str = "Move Selection"):
         self.document = document
         self.layer_index = layer_index
         self.pixels = pixels
         self.dx = dx
         self.dy = dy
+        self.name = name
 
     def execute(self) -> None:
         if not (0 <= self.layer_index < len(self.document.layers)):
@@ -47,12 +48,13 @@ class MoveSelectionCommand(Command):
 class PasteCommand(Command):
     def __init__(self, document: Document, layer_index: int,
                  pixels: Dict[Tuple[int, int], Optional[Color]],
-                 offset_x: int, offset_y: int):
+                 offset_x: int, offset_y: int, name: str = "Paste"):
         self.document = document
         self.layer_index = layer_index
         self.pixels = pixels
         self.offset_x = offset_x
         self.offset_y = offset_y
+        self.name = name
         self._overwritten: Dict[Tuple[int, int], Optional[Color]] = {}
 
     def execute(self) -> None:
@@ -83,10 +85,11 @@ class PasteCommand(Command):
 
 class DeleteSelectionCommand(Command):
     def __init__(self, document: Document, layer_index: int,
-                 pixels: Dict[Tuple[int, int], Optional[Color]]):
+                 pixels: Dict[Tuple[int, int], Optional[Color]], name: str = "Delete"):
         self.document = document
         self.layer_index = layer_index
         self.pixels = pixels
+        self.name = name
 
     def execute(self) -> None:
         if not (0 <= self.layer_index < len(self.document.layers)):

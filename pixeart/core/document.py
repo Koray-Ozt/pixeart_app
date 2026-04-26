@@ -79,29 +79,38 @@ class Document:
             self.is_dirty = True
 
     # --- Dönüşüm ve Kaydırma (Transform & Shift) ---
-    def get_flipped_horizontal(self, pixels: dict) -> dict:
+    def get_flipped_horizontal(self, pixels: dict, bbox: Tuple[int, int, int, int] = None) -> dict:
         new_pixels = {}
         for (x, y), color in pixels.items():
-            new_pixels[(self._width - 1 - x, y)] = color
+            if bbox:
+                nx = bbox[0] + bbox[2] - x
+            else:
+                nx = self._width - 1 - x
+            new_pixels[(nx, y)] = color
         return new_pixels
 
-    def get_flipped_vertical(self, pixels: dict) -> dict:
+    def get_flipped_vertical(self, pixels: dict, bbox: Tuple[int, int, int, int] = None) -> dict:
         new_pixels = {}
         for (x, y), color in pixels.items():
-            new_pixels[(x, self._height - 1 - y)] = color
+            if bbox:
+                ny = bbox[1] + bbox[3] - y
+            else:
+                ny = self._height - 1 - y
+            new_pixels[(x, ny)] = color
         return new_pixels
 
-    def get_rotated(self, pixels: dict, angle: int) -> dict:
-        # Sadece 90, 180, -90 (-90 = 270) desteklenir
+    def get_rotated(self, pixels: dict, angle: int, bbox: Tuple[int, int, int, int] = None) -> dict:
         angle = angle % 360
         new_pixels = {}
-        cx, cy = self._width / 2.0, self._height / 2.0
-        
-        for (x, y), color in pixels.items():
-            # Merkeze göre ötele
-            nx, ny = x - cx + 0.5, y - cy + 0.5
+        if bbox:
+            cx = (bbox[0] + bbox[2]) / 2.0
+            cy = (bbox[1] + bbox[3]) / 2.0
+        else:
+            cx, cy = self._width / 2.0 - 0.5, self._height / 2.0 - 0.5
             
-            # Döndür
+        for (x, y), color in pixels.items():
+            nx, ny = x - cx, y - cy
+            
             if angle == 90:
                 rx, ry = -ny, nx
             elif angle == 180:
@@ -111,10 +120,9 @@ class Document:
             else:
                 rx, ry = nx, ny
                 
-            # Geri ötele
-            final_x, final_y = int(math.floor(rx + cx - 0.5)), int(math.floor(ry + cy - 0.5))
+            final_x = int(round(rx + cx))
+            final_y = int(round(ry + cy))
             
-            # Tuval içinde kalanları al
             if self.in_bounds(final_x, final_y):
                 new_pixels[(final_x, final_y)] = color
                 
@@ -126,6 +134,39 @@ class Document:
             nx = (x + dx) % self._width
             ny = (y + dy) % self._height
             new_pixels[(nx, ny)] = color
+        return new_pixels
+
+    def get_filled_pixels(self, base_pixels: dict, selection_mask: set, fill_color: "Color") -> dict:
+        new_pixels = base_pixels.copy()
+        if not selection_mask:
+            for y in range(self.height):
+                for x in range(self.width):
+                    new_pixels[(x, y)] = fill_color
+        else:
+            for (x, y) in selection_mask:
+                if self.in_bounds(x, y):
+                    new_pixels[(x, y)] = fill_color
+        return new_pixels
+
+    def get_stroked_pixels(self, base_pixels: dict, selection_mask: set, stroke_color: "Color") -> dict:
+        new_pixels = base_pixels.copy()
+        if not selection_mask:
+            return new_pixels
+            
+        dirs = [(0, -1), (0, 1), (-1, 0), (1, 0), (-1, -1), (1, -1), (-1, 1), (1, 1)]
+        stroke_pts = set()
+        for (x, y) in selection_mask:
+            is_edge = False
+            for dx, dy in dirs:
+                if (x + dx, y + dy) not in selection_mask:
+                    is_edge = True
+                    break
+            if is_edge:
+                stroke_pts.add((x, y))
+                
+        for (x, y) in stroke_pts:
+            if self.in_bounds(x, y):
+                new_pixels[(x, y)] = stroke_color
         return new_pixels
 
     def in_bounds(self, x: int, y: int) -> bool:

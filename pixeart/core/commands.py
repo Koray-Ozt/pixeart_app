@@ -11,11 +11,13 @@ class DrawCommand(Command):
     """
     def __init__(self, document: Document, layer_index: int, 
                  before_pixels: Dict[Tuple[int, int], Optional[Color]], 
-                 after_pixels: Dict[Tuple[int, int], Optional[Color]]):
+                 after_pixels: Dict[Tuple[int, int], Optional[Color]],
+                 name: str = "Pencil/Eraser"):
         self.document = document
         self.layer_index = layer_index
         self.before_pixels = before_pixels
         self.after_pixels = after_pixels
+        self.name = name
 
     def execute(self) -> None:
         """İleri Al (Redo) tetiklendiğinde veya ilk çizimde yeni pikselleri katmana uygular."""
@@ -50,11 +52,13 @@ class ModifyLayerCommand(Command):
     """
     def __init__(self, document: Document, layer_index: int, 
                  before_pixels: Dict[Tuple[int, int], Color], 
-                 after_pixels: Dict[Tuple[int, int], Color]):
+                 after_pixels: Dict[Tuple[int, int], Color],
+                 name: str = "Modify Layer"):
         self.document = document
         self.layer_index = layer_index
         self.before_pixels = before_pixels
         self.after_pixels = after_pixels
+        self.name = name
 
     def execute(self) -> None:
         if not (0 <= self.layer_index < len(self.document.layers)):

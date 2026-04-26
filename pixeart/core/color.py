@@ -51,5 +51,17 @@ class Color:
         g = int((self.g * alpha_src + background.g * alpha_bg * (1 - alpha_src)) / out_alpha)
         b = int((self.b * alpha_src + background.b * alpha_bg * (1 - alpha_src)) / out_alpha)
         a = int(out_alpha * 255)
-        
         return Color(r, g, b, a)
+
+import math
+
+def color_distance(c1: Color, c2: Color) -> float:
+    """
+    Kırmızı-ortalama (Redmean) yaklaşımı ile algısal (perceptual) mesafe ölçümü.
+    Lab uzayına göre oldukça hızlı ve başarılı bir yaklaşımdır.
+    """
+    rmean = (c1.r + c2.r) / 2.0
+    r = c1.r - c2.r
+    g = c1.g - c2.g
+    b = c1.b - c2.b
+    return math.sqrt((2 + rmean/256.0)*(r**2) + 4*(g**2) + (2 + (255-rmean)/256.0)*(b**2))

@@ -273,3 +273,32 @@ class SelectionTool(BaseTool):
     def _clear_scene_selection(self):
         if self.manager and self.manager.canvas_scene:
             self.manager.canvas_scene.set_selection_rect(None)
+
+    def transform_selection(self, transform_type: str, bbox: Tuple[int, int, int, int]):
+        if not self.selection_pixels: return
+        
+        # We need a proxy dict to use get_rotated etc.
+        dummy_pixels = {p: None for p in self.selection_pixels}
+        doc = self.manager.document
+        
+        if transform_type == "flip_h":
+            res = doc.get_flipped_horizontal(dummy_pixels, bbox)
+        elif transform_type == "flip_v":
+            res = doc.get_flipped_vertical(dummy_pixels, bbox)
+        elif transform_type == "rot_180":
+            res = doc.get_rotated(dummy_pixels, 180, bbox)
+        elif transform_type == "rot_90cw":
+            res = doc.get_rotated(dummy_pixels, 90, bbox)
+        elif transform_type == "rot_90ccw":
+            res = doc.get_rotated(dummy_pixels, 270, bbox)
+        else:
+            return
+            
+        self.selection_pixels = set(res.keys())
+        
+        if self.manager.canvas_scene and self.selection_pixels:
+            xs = [p[0] for p in self.selection_pixels]
+            ys = [p[1] for p in self.selection_pixels]
+            self.manager.canvas_scene.set_selection_rect(
+                QRectF(min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1)
+            )

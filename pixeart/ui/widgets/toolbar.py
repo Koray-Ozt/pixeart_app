@@ -17,13 +17,15 @@ class ToolBarWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(80)
+        self.setMinimumWidth(60)
+        self.setMaximumWidth(90)
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 15, 4, 15)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(12)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
 
         self.btn_group = QButtonGroup(self)
         self.btn_group.setExclusive(True)
@@ -48,12 +50,13 @@ class ToolBarWidget(QWidget):
             btn.setStyleSheet("""
                 QPushButton {
                     background-color: transparent;
-                    border: 2px solid transparent;
-                    border-radius: 8px;
+                    border: 1px solid transparent;
+                    border-radius: 4px;
                     font-size: 16px; font-weight: bold; color: #ccc;
+                    padding: 0px;
                 }
-                QPushButton:hover { background-color: #2a2a2a; color: white; }
-                QPushButton:checked { background-color: #005a9e; border: 2px solid #66b2ff; color: white; }
+                QPushButton:hover { background-color: #2a2a2a; color: white; border: 1px solid #444; }
+                QPushButton:checked { background-color: #005a9e; border: 1px solid #66b2ff; color: white; }
             """)
             self.btn_group.addButton(btn, i)
             self.tool_map[btn] = code

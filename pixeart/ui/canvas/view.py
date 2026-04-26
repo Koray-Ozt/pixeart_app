@@ -35,6 +35,10 @@ class CanvasView(QGraphicsView):
         # Simetri ekseni
         self._symmetry_mode = "none"
 
+        # Snap & Tiled
+        self.snap_to_grid = False
+        self._tiled_mode = "none"
+
         self.setBackgroundBrush(QColor("#1e1e1e"))
 
     # --- Grid property'leri ---
@@ -60,6 +64,11 @@ class CanvasView(QGraphicsView):
 
     def set_symmetry_mode(self, mode: str):
         self._symmetry_mode = mode
+        self.viewport().update()
+
+    def set_tiled_mode(self, mode: str):
+        """Döşeme modunu ayarla: 'none', 'x', 'y', 'both'"""
+        self._tiled_mode = mode
         self.viewport().update()
 
     # --- Zoom ---

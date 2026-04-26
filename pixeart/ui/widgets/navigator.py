@@ -1,9 +1,16 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QColor, QImage, QPixmap, QPen, QMouseEvent
+from PyQt6.QtCore import Qt, QRectF, QPointF, QRect
+from PyQt6.QtGui import QPainter, QColor, QImage, QPixmap, QPen, QMouseEvent, QBrush
 
 
 class NavigatorWidget(QWidget):
+    """
+    Yüksek çözünürlüklü navigator önizlemesi.
+    Belgenin piksellerini widget'ın gerçek fiziksel piksel boyutuna
+    nearest-neighbor (piksel sanatına uygun) ölçekleme ile çizer.
+    Kırmızı çerçeve, ana tuvalin bakış açısını takip eder.
+    """
+
     def __init__(self, canvas_view=None, canvas_scene=None, parent=None):
         super().__init__(parent)
         self._canvas_view = canvas_view
@@ -12,8 +19,8 @@ class NavigatorWidget(QWidget):
         self._viewport_rect = QRectF()
         self._doc_width = 0
         self._doc_height = 0
-        self.setMinimumSize(160, 120)
-        self.setMaximumHeight(200)
+        self.setMinimumSize(200, 150)
+        self.setMaximumHeight(250)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     def set_canvas(self, canvas_view, canvas_scene):
@@ -30,17 +37,55 @@ class NavigatorWidget(QWidget):
         self._doc_width = doc.width
         self._doc_height = doc.height
 
-        img = QImage(doc.width, doc.height, QImage.Format.Format_ARGB32)
-        img.fill(QColor(30, 30, 30))
+        # --- Yüksek çözünürlüklü render ---
+        # Widget'ın gerçek boyutuna göre ölçekleme faktörü hesapla.
+        # Önizleme, widget'ın iç alanına (padding hariç) sığacak şekilde
+        # tam sayı katı (nearest-neighbor) olarak ölçeklenir.
+        draw_rect, _ = self._get_draw_rect()
+        target_w = max(int(draw_rect.width()), 1)
+        target_h = max(int(draw_rect.height()), 1)
 
+        # Nearest-neighbor ölçekleme faktörü (tam sayı veya kesirli)
+        scale_x = target_w / max(doc.width, 1)
+        scale_y = target_h / max(doc.height, 1)
+        pixel_scale = min(scale_x, scale_y)
+        pixel_scale = max(pixel_scale, 1.0)
+
+        render_w = int(doc.width * pixel_scale)
+        render_h = int(doc.height * pixel_scale)
+
+        # Checkerboard arka plan
+        img = QImage(render_w, render_h, QImage.Format.Format_ARGB32_Premultiplied)
+        painter = QPainter(img)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+
+        checker_size = max(int(pixel_scale), 4)
+        c1, c2 = QColor(200, 200, 200), QColor(255, 255, 255)
+        for cy in range(0, render_h, checker_size):
+            for cx in range(0, render_w, checker_size):
+                color = c1 if ((cx // checker_size) + (cy // checker_size)) % 2 == 0 else c2
+                painter.fillRect(QRect(cx, cy, checker_size, checker_size), color)
+
+        # Pikselleri çiz — her piksel pixel_scale x pixel_scale kare olarak
+        ps = int(max(pixel_scale, 1))
         for layer in doc.layers:
             if not layer.is_visible:
                 continue
             for (x, y), color in layer.active_pixels.items():
-                if not color.is_transparent:
-                    img.setPixelColor(x, y, QColor(*color.to_rgba_tuple()))
+                if color.is_transparent:
+                    continue
+                qc = QColor(color.r, color.g, color.b, color.a)
+                rx = int(x * pixel_scale)
+                ry = int(y * pixel_scale)
+                painter.fillRect(QRect(rx, ry, ps, ps), qc)
+
+        painter.end()
 
         self._preview = QPixmap.fromImage(img)
+        self._render_scale = pixel_scale
+        self._render_w = render_w
+        self._render_h = render_h
         self._update_viewport_rect()
         self.update()
 
@@ -58,9 +103,10 @@ class NavigatorWidget(QWidget):
         self.update()
 
     def _get_draw_rect(self):
-        w, h = self.width() - 8, self.height() - 8
+        padding = 8
+        w, h = self.width() - padding * 2, self.height() - padding * 2
         if self._doc_width <= 0 or self._doc_height <= 0:
-            return QRectF(4, 4, w, h), 1.0
+            return QRectF(padding, padding, w, h), 1.0
 
         scale = min(w / self._doc_width, h / self._doc_height)
         pw = self._doc_width * scale
@@ -71,8 +117,11 @@ class NavigatorWidget(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        # Piksel sanatı için nearest-neighbor — ASLA smooth kullanma
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
+        # Koyu arka plan
         p.fillRect(self.rect(), QColor(25, 25, 30))
 
         draw_rect, scale = self._get_draw_rect()
@@ -80,7 +129,7 @@ class NavigatorWidget(QWidget):
         if not self._preview.isNull():
             p.drawPixmap(draw_rect.toRect(), self._preview)
 
-        # Viewport çerçevesi
+        # Viewport çerçevesi (kırmızı)
         if not self._viewport_rect.isNull() and self._doc_width > 0:
             vr = QRectF(
                 draw_rect.x() + self._viewport_rect.x() * scale,
@@ -88,12 +137,17 @@ class NavigatorWidget(QWidget):
                 self._viewport_rect.width() * scale,
                 self._viewport_rect.height() * scale
             )
-            pen = QPen(QColor(255, 60, 60, 200), 2)
+            pen = QPen(QColor(255, 60, 60, 220), 2)
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRect(vr)
 
         p.end()
+
+    def resizeEvent(self, event):
+        """Widget boyutu değiştiğinde önizlemeyi yeniden oluştur."""
+        super().resizeEvent(event)
+        self.update_preview()
 
     def mousePressEvent(self, event: QMouseEvent):
         self._navigate_to(event.position())

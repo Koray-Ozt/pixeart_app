@@ -18,7 +18,8 @@ class LayerItemWidget(QWidget):
         self.layer = layer
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
         
         # Visibility
         self.btn_visible = QPushButton("👁" if layer.is_visible else "✕")
@@ -37,6 +38,7 @@ class LayerItemWidget(QWidget):
         
         # Name
         self.lbl_name = QLabel(layer.name)
+        self.lbl_name.setWordWrap(True)
         self.lbl_name.setStyleSheet("color: white;")
         
         # Lock

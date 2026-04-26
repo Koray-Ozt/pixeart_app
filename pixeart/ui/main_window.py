@@ -1,10 +1,10 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QStackedWidget,
     QStatusBar, QLabel, QDockWidget, QMenuBar,
-    QFileDialog, QMessageBox
+    QFileDialog, QMessageBox, QScrollArea
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QShortcut, QKeySequence
 
 from pixeart.core.history import History
 from pixeart.core.document import Document
@@ -61,6 +61,13 @@ class MainWindow(QMainWindow):
         # Uygulama açılışında Landing Page göster
         self._show_landing()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        target_width = int(self.width() * 0.2)
+        target_widths = [target_width, target_width, target_width, target_width]
+        docks = [self.layers_dock, self.color_dock, self.navigator_dock, self.history_dock]
+        self.resizeDocks(docks, target_widths, Qt.Orientation.Horizontal)
+
     def _init_ui(self):
         """Arayüz bileşenlerini sırasıyla oluşturur."""
         self._create_central_widget()
@@ -97,25 +104,45 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.tools_dock)
 
         # 2. Katmanlar
+        def create_scrollable_dock(dock_widget, inner_widget):
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(inner_widget)
+            dock_widget.setWidget(scroll)
+            inner_widget.setMinimumHeight(150)
+            inner_widget.setMinimumWidth(200)
+            
+        # 2. Katmanlar (Layers)
         self.layers_dock = QDockWidget("Katmanlar", self)
         self.layers_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.layer_panel = LayerPanel()
-        self.layers_dock.setWidget(self.layer_panel)
+        create_scrollable_dock(self.layers_dock, self.layer_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.layers_dock)
 
         # 3. Renk Paleti
         self.color_dock = QDockWidget("Renk Paleti", self)
         self.color_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.color_palette = ColorPalette()
-        self.color_dock.setWidget(self.color_palette)
+        create_scrollable_dock(self.color_dock, self.color_palette)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.color_dock)
 
         # 4. Navigator
         self.navigator_dock = QDockWidget("Gezgin", self)
         self.navigator_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.navigator = NavigatorWidget(self.canvas_view, self.canvas_scene)
-        self.navigator_dock.setWidget(self.navigator)
+        self.navigator.setMinimumHeight(200) # Navigator için özel min boyut
+        self.navigator.setMinimumWidth(200)
+        self.navigator_dock.setWidget(self.navigator) # Navigator kendi resize mantığına sahip
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.navigator_dock)
+
+        # 5. Geçmiş (History)
+        self.history_dock = QDockWidget("Geçmiş", self)
+        self.history_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        from pixeart.ui.widgets.history_panel import HistoryPanel
+        self.history_panel = HistoryPanel(self.history)
+        create_scrollable_dock(self.history_dock, self.history_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_dock)
 
     def _create_menus(self):
         """Üst menü çubuğunu ve diyalog bağlantılarını oluşturur."""
@@ -178,6 +205,17 @@ class MainWindow(QMainWindow):
 
         edit_menu.addSeparator()
 
+        paste_special_menu = edit_menu.addMenu("Özel Yapıştır (Paste Special)")
+        paste_new_layer = QAction("Yeni Katmana Yapıştır (Paste as New Layer)", self)
+        paste_new_layer.triggered.connect(self._on_paste_new_layer)
+        paste_special_menu.addAction(paste_new_layer)
+        
+        paste_new_sprite = QAction("Yeni Belgeye Yapıştır (Paste as New Sprite)", self)
+        paste_new_sprite.triggered.connect(self._on_paste_new_sprite)
+        paste_special_menu.addAction(paste_new_sprite)
+
+        edit_menu.addSeparator()
+
         cut_action = QAction("Kes (Cut)", self)
         cut_action.setShortcut("Ctrl+X")
         cut_action.triggered.connect(self._on_cut)
@@ -202,6 +240,17 @@ class MainWindow(QMainWindow):
         deselect_action.setShortcut("Ctrl+D")
         deselect_action.triggered.connect(self._on_deselect)
         edit_menu.addAction(deselect_action)
+
+        edit_menu.addSeparator()
+
+        fill_action = QAction("Doldur (Fill)", self)
+        fill_action.setShortcut("Shift+F")
+        fill_action.triggered.connect(self._on_fill)
+        edit_menu.addAction(fill_action)
+        
+        stroke_action = QAction("Sınır Çiz (Stroke)", self)
+        stroke_action.triggered.connect(self._on_stroke)
+        edit_menu.addAction(stroke_action)
 
         edit_menu.addSeparator()
 
@@ -269,26 +318,163 @@ class MainWindow(QMainWindow):
         adj_menu.addAction(bc_action)
         
         hs_action = QAction("Ton / Doygunluk (Hue/Sat)...", self)
+        hs_action.setShortcut("Ctrl+U")
         hs_action.triggered.connect(self._on_hue_saturation)
         adj_menu.addAction(hs_action)
+        
+        curve_action = QAction("Renk Eğrisi (Color Curve)...", self)
+        curve_action.setShortcut("Ctrl+M")
+        curve_action.triggered.connect(self._on_color_curve)
+        adj_menu.addAction(curve_action)
 
         fx_menu = edit_menu.addMenu("Efektler (FX)")
         outline_action = QAction("Dış Çizgi (Outline)...", self)
         outline_action.triggered.connect(self._on_outline)
         fx_menu.addAction(outline_action)
         
+        despeckle_action = QAction("Gürültü Azalt (Despeckle)", self)
+        despeckle_action.triggered.connect(lambda: self._apply_effect("despeckle"))
+        fx_menu.addAction(despeckle_action)
+        
+        blur_action = QAction("Bulanıklaştır (Blur)", self)
+        blur_action.triggered.connect(self._on_blur)
+        fx_menu.addAction(blur_action)
+        
         conv_action = QAction("Matris Filtresi (Convolution)...", self)
         conv_action.triggered.connect(self._on_convolution)
         fx_menu.addAction(conv_action)
+        
+        lighting_action = QAction("Aydınlatma (Lighting)...", self)
+        lighting_action.triggered.connect(self._on_lighting)
+        fx_menu.addAction(lighting_action)
 
-        # --- Görünüm Menüsü ---
+        # --- Görünüm (View) Menüsü ---
         view_menu = menubar.addMenu("Görünüm")
 
-        self.onion_action = QAction("Onion Skinning", self)
-        self.onion_action.setShortcut("O")
+        # -- Show (Göster) Alt Menüsü --
+        show_menu = view_menu.addMenu("Göster (Show)")
+
+        self.show_layer_edges_action = QAction("Layer Edges", self)
+        self.show_layer_edges_action.setCheckable(True)
+        self.show_layer_edges_action.setChecked(False)
+        self.show_layer_edges_action.triggered.connect(self._on_toggle_layer_edges)
+        show_menu.addAction(self.show_layer_edges_action)
+
+        self.show_selection_edges_action = QAction("Selection Edges", self)
+        self.show_selection_edges_action.setCheckable(True)
+        self.show_selection_edges_action.setChecked(True)
+        self.show_selection_edges_action.triggered.connect(self._on_toggle_selection_edges)
+        show_menu.addAction(self.show_selection_edges_action)
+
+        self.show_grid_action = QAction("Grid (Izgara)", self)
+        self.show_grid_action.setShortcut("Ctrl+'")
+        self.show_grid_action.setCheckable(True)
+        self.show_grid_action.setChecked(True)
+        self.show_grid_action.triggered.connect(self._on_toggle_grid)
+        show_menu.addAction(self.show_grid_action)
+
+        self.show_auto_guides_action = QAction("Auto Guides", self)
+        self.show_auto_guides_action.setCheckable(True)
+        self.show_auto_guides_action.setChecked(False)
+        show_menu.addAction(self.show_auto_guides_action)
+
+        self.show_slices_action = QAction("Slices", self)
+        self.show_slices_action.setCheckable(True)
+        self.show_slices_action.setChecked(False)
+        show_menu.addAction(self.show_slices_action)
+
+        self.show_pixel_grid_action = QAction("Pixel Grid", self)
+        self.show_pixel_grid_action.setCheckable(True)
+        self.show_pixel_grid_action.setChecked(True)
+        self.show_pixel_grid_action.triggered.connect(self._on_toggle_pixel_grid)
+        show_menu.addAction(self.show_pixel_grid_action)
+
+        view_menu.addSeparator()
+
+        # -- Grid (Izgara) Alt Menüsü --
+        grid_menu = view_menu.addMenu("Izgara (Grid)")
+
+        grid_settings_action = QAction("Grid Settings...", self)
+        grid_settings_action.triggered.connect(self._on_grid_settings)
+        grid_menu.addAction(grid_settings_action)
+
+        selection_as_grid_action = QAction("Selection as Grid", self)
+        selection_as_grid_action.triggered.connect(self._on_selection_as_grid)
+        grid_menu.addAction(selection_as_grid_action)
+
+        grid_menu.addSeparator()
+
+        self.snap_to_grid_action = QAction("Snap to Grid", self)
+        self.snap_to_grid_action.setShortcut("Shift+S")
+        self.snap_to_grid_action.setCheckable(True)
+        self.snap_to_grid_action.setChecked(False)
+        self.snap_to_grid_action.triggered.connect(self._on_toggle_snap_to_grid)
+        grid_menu.addAction(self.snap_to_grid_action)
+
+        # -- Tiled Mode (Döşeme Modu) Alt Menüsü --
+        tiled_menu = view_menu.addMenu("Döşeme Modu (Tiled Mode)")
+        self.tiled_group = QActionGroup(self)
+        self.tiled_group.setExclusive(True)
+
+        tiled_options = [
+            ("None", "none"),
+            ("Tiled in Both Axes", "both"),
+            ("Tiled in X Axis", "x"),
+            ("Tiled in Y Axis", "y"),
+        ]
+        self._tiled_mode = "none"
+        for label, code in tiled_options:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setData(code)
+            if code == "none":
+                action.setChecked(True)
+            self.tiled_group.addAction(action)
+            tiled_menu.addAction(action)
+        self.tiled_group.triggered.connect(self._on_tiled_mode_changed)
+
+        view_menu.addSeparator()
+
+        # -- Bağımsız Seçenekler --
+        duplicate_view_action = QAction("Duplicate View", self)
+        duplicate_view_action.triggered.connect(self._on_duplicate_view)
+        view_menu.addAction(duplicate_view_action)
+
+        self.extras_action = QAction("Extras", self)
+        self.extras_action.setShortcut("Ctrl+H")
+        self.extras_action.setCheckable(True)
+        self.extras_action.setChecked(True)
+        self.extras_action.triggered.connect(self._on_toggle_extras)
+        view_menu.addAction(self.extras_action)
+
+        view_menu.addSeparator()
+
+        symmetry_options_action = QAction("Symmetry Options...", self)
+        symmetry_options_action.triggered.connect(self._on_symmetry_options)
+        view_menu.addAction(symmetry_options_action)
+
+        self.onion_action = QAction("Show Onion Skin", self)
+        self.onion_action.setShortcut("F3")
         self.onion_action.setCheckable(True)
         self.onion_action.triggered.connect(self._on_toggle_onion)
         view_menu.addAction(self.onion_action)
+
+        view_menu.addSeparator()
+
+        timeline_action = QAction("Timeline", self)
+        timeline_action.triggered.connect(lambda: self.statusBar.showMessage("Timeline henüz aktif değil.", 3000))
+        view_menu.addAction(timeline_action)
+
+        preview_action = QAction("Preview", self)
+        preview_action.triggered.connect(self._on_toggle_preview)
+        view_menu.addAction(preview_action)
+
+        view_menu.addSeparator()
+
+        fullscreen_action = QAction("Full Screen Mode", self)
+        fullscreen_action.setShortcut("F11")
+        fullscreen_action.triggered.connect(self._on_toggle_fullscreen)
+        view_menu.addAction(fullscreen_action)
 
     def _connect_signals(self):
         """Tüm paneller arasındaki haberleşme sinyallerini merkeze bağlar."""
@@ -468,6 +654,160 @@ class MainWindow(QMainWindow):
         self.canvas_scene.set_onion_skinning(checked)
         self.statusBar.showMessage(f"Onion Skinning: {'Açık' if checked else 'Kapalı'}", 2000)
 
+    # --- Görünüm (View) Menüsü Slot'ları ---
+
+    def _on_toggle_layer_edges(self, checked: bool):
+        """Katman sınırlarını göster/gizle (scene rect border)."""
+        self.canvas_scene.show_layer_edges = checked
+        self.canvas_scene.update()
+        self.statusBar.showMessage(f"Layer Edges: {'Açık' if checked else 'Kapalı'}", 2000)
+
+    def _on_toggle_selection_edges(self, checked: bool):
+        """Seçim kenarlarını (karınca sürüsü) göster/gizle."""
+        self.canvas_scene.show_selection_edges = checked
+        self.canvas_scene.update()
+        self.statusBar.showMessage(f"Selection Edges: {'Açık' if checked else 'Kapalı'}", 2000)
+
+    def _on_toggle_grid(self, checked: bool):
+        """Tile ızgarasını aç/kapa."""
+        self.canvas_view.set_tile_grid_visible(checked)
+        self.statusBar.showMessage(f"Grid: {'Açık' if checked else 'Kapalı'}", 2000)
+
+    def _on_toggle_pixel_grid(self, checked: bool):
+        """1x1 piksel ızgarasını aç/kapa."""
+        self.canvas_view.set_grid_visible(checked)
+        self.statusBar.showMessage(f"Pixel Grid: {'Açık' if checked else 'Kapalı'}", 2000)
+
+    def _on_toggle_snap_to_grid(self, checked: bool):
+        """Snap to Grid durumunu güncelle."""
+        self.canvas_view.snap_to_grid = checked
+        self.statusBar.showMessage(f"Snap to Grid: {'Açık' if checked else 'Kapalı'}", 2000)
+
+    def _on_grid_settings(self):
+        """Izgara boyutu ve rengini ayarlamak için diyalog."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QPushButton, QColorDialog
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Grid Settings")
+        layout = QVBoxLayout(dlg)
+
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel("Tile Boyutu:"))
+        spin = QSpinBox()
+        spin.setRange(2, 256)
+        spin.setValue(self.canvas_view._tile_size)
+        size_row.addWidget(spin)
+        layout.addLayout(size_row)
+
+        color_btn = QPushButton("Izgara Rengi Seç...")
+        selected_color = [self.canvas_view._tile_grid_color]
+        def pick_color():
+            c = QColorDialog.getColor(selected_color[0], self, "Izgara Rengi")
+            if c.isValid():
+                selected_color[0] = c
+                color_btn.setStyleSheet(f"background-color: {c.name()};")
+        color_btn.clicked.connect(pick_color)
+        layout.addWidget(color_btn)
+
+        btn_row = QHBoxLayout()
+        ok_btn = QPushButton("Tamam")
+        cancel_btn = QPushButton("İptal")
+        ok_btn.clicked.connect(dlg.accept)
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.canvas_view.set_tile_size(spin.value())
+            self.canvas_view.set_tile_grid_color(selected_color[0])
+            self.statusBar.showMessage(f"Grid: {spin.value()}x{spin.value()} ayarlandı.", 3000)
+
+    def _on_selection_as_grid(self):
+        """Mevcut seçimi ızgara boyutu olarak ayarla."""
+        if not hasattr(self, '_selection_tool') or not self._selection_tool.selection_rect:
+            self.statusBar.showMessage("Aktif seçim yok.", 3000)
+            return
+        rect = self._selection_tool.selection_rect
+        size = max(int(rect.width()), int(rect.height()))
+        if size >= 2:
+            self.canvas_view.set_tile_size(size)
+            self.statusBar.showMessage(f"Grid boyutu seçime göre ayarlandı: {size}x{size}", 3000)
+
+    def _on_tiled_mode_changed(self, action):
+        """Döşeme modunu güncelle."""
+        self._tiled_mode = action.data()
+        self.canvas_view.set_tiled_mode(self._tiled_mode)
+        self.statusBar.showMessage(f"Tiled Mode: {action.text()}", 2000)
+
+    def _on_duplicate_view(self):
+        """Tuvali yeni bir pencerede göster."""
+        from PyQt6.QtWidgets import QMainWindow as QMW
+        viewer = QMW(self)
+        viewer.setWindowTitle("PixeArt – Duplicate View")
+        dup_view = CanvasView(self.canvas_scene, viewer)
+        viewer.setCentralWidget(dup_view)
+        viewer.resize(600, 500)
+        dup_view.set_zoom(self.canvas_view._zoom_factor)
+        viewer.show()
+        self.statusBar.showMessage("Duplicate view açıldı.", 2000)
+
+    def _on_toggle_extras(self, checked: bool):
+        """Tüm yardımcı gösterimleri (grid, simetri, seçim) tek tuşla aç/kapa."""
+        self.canvas_view.set_grid_visible(checked)
+        self.canvas_view.set_tile_grid_visible(checked)
+        # Menüdeki checkmark'ları senkronize et
+        self.show_grid_action.setChecked(checked)
+        self.show_pixel_grid_action.setChecked(checked)
+        self.statusBar.showMessage(f"Extras: {'Açık' if checked else 'Kapalı'}", 2000)
+
+    def _on_symmetry_options(self):
+        """Simetri modunu seçmek için hızlı diyalog."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QPushButton, QHBoxLayout
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Symmetry Options")
+        layout = QVBoxLayout(dlg)
+
+        modes = [("Kapalı", "none"), ("Dikey (Vertical)", "vertical"),
+                 ("Yatay (Horizontal)", "horizontal"), ("Her İki Eksen (Both)", "both")]
+        radios = []
+        for label, code in modes:
+            rb = QRadioButton(label)
+            if self.canvas_view._symmetry_mode == code:
+                rb.setChecked(True)
+            rb.code = code
+            radios.append(rb)
+            layout.addWidget(rb)
+
+        btn_row = QHBoxLayout()
+        ok_btn = QPushButton("Tamam")
+        ok_btn.clicked.connect(dlg.accept)
+        cancel_btn = QPushButton("İptal")
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            for rb in radios:
+                if rb.isChecked():
+                    self._on_symmetry_changed(rb.code)
+                    break
+
+    def _on_toggle_preview(self):
+        """Navigator dock'unu göster/gizle."""
+        is_visible = self.navigator_dock.isVisible()
+        self.navigator_dock.setVisible(not is_visible)
+        self.statusBar.showMessage(f"Preview: {'Gizlendi' if is_visible else 'Gösterildi'}", 2000)
+
+    def _on_toggle_fullscreen(self):
+        """Tam ekran modunu aç/kapa."""
+        if self.isFullScreen():
+            self.showNormal()
+            self.statusBar.showMessage("Tam ekrandan çıkıldı.", 2000)
+        else:
+            self.showFullScreen()
+            self.statusBar.showMessage("Tam ekran moduna geçildi.", 2000)
+
     # --- Seçim İşlemleri ---
     def _on_copy(self):
         self._selection_tool.copy_selection()
@@ -493,6 +833,8 @@ class MainWindow(QMainWindow):
         self.canvas_scene.sync_layers()
         self.layer_panel.update_thumbnails()
         self.navigator.update_preview()
+        if hasattr(self, 'history_panel'):
+            self.history_panel.refresh()
 
     def _on_cut(self):
         self._on_copy()
@@ -504,31 +846,58 @@ class MainWindow(QMainWindow):
         
         idx = self.document.active_layer_index
         layer = self.document.layers[idx]
-        before_pixels = layer.active_pixels.copy()
+        before_pixels_full = layer.active_pixels.copy()
+        
+        sel_pixels = self._selection_tool.selection_pixels
+        bbox = None
+        
+        if sel_pixels:
+            xs = [p[0] for p in sel_pixels]
+            ys = [p[1] for p in sel_pixels]
+            bbox = (min(xs), min(ys), max(xs), max(ys))
+            
+            target_pixels = {}
+            for (x, y) in sel_pixels:
+                if (x, y) in before_pixels_full:
+                    target_pixels[(x, y)] = before_pixels_full[(x, y)]
+        else:
+            target_pixels = before_pixels_full.copy()
         
         if t_type == "flip_h":
-            after_pixels = self.document.get_flipped_horizontal(before_pixels)
+            transformed_pixels = self.document.get_flipped_horizontal(target_pixels, bbox)
         elif t_type == "flip_v":
-            after_pixels = self.document.get_flipped_vertical(before_pixels)
+            transformed_pixels = self.document.get_flipped_vertical(target_pixels, bbox)
         elif t_type == "rot_180":
-            after_pixels = self.document.get_rotated(before_pixels, 180)
+            transformed_pixels = self.document.get_rotated(target_pixels, 180, bbox)
         elif t_type == "rot_90cw":
-            after_pixels = self.document.get_rotated(before_pixels, 90)
+            transformed_pixels = self.document.get_rotated(target_pixels, 90, bbox)
         elif t_type == "rot_90ccw":
-            after_pixels = self.document.get_rotated(before_pixels, 270)
+            transformed_pixels = self.document.get_rotated(target_pixels, 270, bbox)
         elif t_type == "shift_left":
-            after_pixels = self.document.get_shifted(before_pixels, -1, 0)
+            transformed_pixels = self.document.get_shifted(target_pixels, -1, 0)
         elif t_type == "shift_right":
-            after_pixels = self.document.get_shifted(before_pixels, 1, 0)
+            transformed_pixels = self.document.get_shifted(target_pixels, 1, 0)
         elif t_type == "shift_up":
-            after_pixels = self.document.get_shifted(before_pixels, 0, -1)
+            transformed_pixels = self.document.get_shifted(target_pixels, 0, -1)
         elif t_type == "shift_down":
-            after_pixels = self.document.get_shifted(before_pixels, 0, 1)
+            transformed_pixels = self.document.get_shifted(target_pixels, 0, 1)
         else:
             return
             
+        if sel_pixels:
+            after_pixels_full = before_pixels_full.copy()
+            for (x, y) in sel_pixels:
+                if (x, y) in after_pixels_full:
+                    del after_pixels_full[(x, y)]
+            for (x, y), color in transformed_pixels.items():
+                after_pixels_full[(x, y)] = color
+                
+            self._selection_tool.transform_selection(t_type, bbox)
+        else:
+            after_pixels_full = transformed_pixels
+            
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels, after_pixels)
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name=f"Transform: {t_type}")
         self.tool_manager.commit_command(cmd)
 
     # --- Hızlı Efekt İşlemleri ---
@@ -537,27 +906,50 @@ class MainWindow(QMainWindow):
         
         idx = self.document.active_layer_index
         layer = self.document.layers[idx]
-        before_pixels = layer.active_pixels.copy()
+        before_pixels_full = layer.active_pixels.copy()
         
-        from pixeart.core.effects_logic import invert_colors, grayscale
+        sel_pixels = self._selection_tool.selection_pixels
+        if sel_pixels:
+            target_pixels = {}
+            for (x, y) in sel_pixels:
+                if (x, y) in before_pixels_full:
+                    target_pixels[(x, y)] = before_pixels_full[(x, y)]
+        else:
+            target_pixels = before_pixels_full.copy()
+        
+        from pixeart.core.effects_logic import invert_colors, grayscale, apply_despeckle
         if e_type == "invert":
-            after_pixels = invert_colors(before_pixels)
+            transformed_pixels = invert_colors(target_pixels)
         elif e_type == "grayscale":
-            after_pixels = grayscale(before_pixels)
+            transformed_pixels = grayscale(target_pixels)
+        elif e_type == "despeckle":
+            transformed_pixels = apply_despeckle(target_pixels, self.document.width, self.document.height)
         else:
             return
             
+        if sel_pixels:
+            after_pixels_full = before_pixels_full.copy()
+            for (x, y) in sel_pixels:
+                if (x, y) in after_pixels_full:
+                    del after_pixels_full[(x, y)]
+            for (x, y), color in transformed_pixels.items():
+                after_pixels_full[(x, y)] = color
+        else:
+            after_pixels_full = transformed_pixels
+            
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels, after_pixels)
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name=f"FX: {e_type}")
         self.tool_manager.commit_command(cmd)
 
     # --- Diyaloglu Efekt İşlemleri (Preview Destekli) ---
-    def _apply_dialog_effect(self, dialog_class, effect_func, initial_args=None):
+    def _apply_dialog_effect(self, dialog_class, effect_func, initial_args=None, name="FX"):
         if not self.document or self.document.active_layer_index < 0: return
         
         layer_idx = self.document.active_layer_index
         layer = self.document.layers[layer_idx]
-        original_pixels = layer.active_pixels.copy()
+        before_pixels_full = layer.active_pixels.copy()
+        
+        sel_pixels = self._selection_tool.selection_pixels
         
         if initial_args is None: initial_args = {}
         dialog = dialog_class(**initial_args, parent=self)
@@ -565,12 +957,28 @@ class MainWindow(QMainWindow):
         def apply_preview(is_active, args):
             layer.clear()
             if is_active:
-                new_pixels = effect_func(original_pixels, **args)
+                if sel_pixels:
+                    target_pixels = { (x,y): before_pixels_full[(x,y)] for (x,y) in sel_pixels if (x,y) in before_pixels_full }
+                else:
+                    target_pixels = before_pixels_full.copy()
+                    
+                transformed_pixels = effect_func(target_pixels, **args)
+                
+                if sel_pixels:
+                    temp_full = before_pixels_full.copy()
+                    for (x, y) in sel_pixels:
+                        if (x, y) in temp_full: del temp_full[(x, y)]
+                    for (x, y), c in transformed_pixels.items():
+                        temp_full[(x, y)] = c
+                    new_pixels = temp_full
+                else:
+                    new_pixels = transformed_pixels
+                    
                 for (x, y), c in new_pixels.items():
                     if not c.is_transparent:
                         layer.set_pixel(x, y, c)
             else:
-                for (x, y), c in original_pixels.items():
+                for (x, y), c in before_pixels_full.items():
                     if not c.is_transparent:
                         layer.set_pixel(x, y, c)
             self.canvas_scene.sync_layers()
@@ -580,16 +988,31 @@ class MainWindow(QMainWindow):
         
         if dialog.exec():
             args = dialog._get_args()
-            new_pixels = effect_func(original_pixels, **args)
+            
+            if sel_pixels:
+                target_pixels = { (x,y): before_pixels_full[(x,y)] for (x,y) in sel_pixels if (x,y) in before_pixels_full }
+            else:
+                target_pixels = before_pixels_full.copy()
+                
+            transformed_pixels = effect_func(target_pixels, **args)
+            
+            if sel_pixels:
+                after_pixels_full = before_pixels_full.copy()
+                for (x, y) in sel_pixels:
+                    if (x, y) in after_pixels_full: del after_pixels_full[(x, y)]
+                for (x, y), c in transformed_pixels.items():
+                    after_pixels_full[(x, y)] = c
+            else:
+                after_pixels_full = transformed_pixels
             
             # Commit için orijinali geri yükle
             layer.clear()
-            for (x, y), c in original_pixels.items():
+            for (x, y), c in before_pixels_full.items():
                 if not c.is_transparent:
                     layer.set_pixel(x, y, c)
                 
             from pixeart.core.commands import ModifyLayerCommand
-            cmd = ModifyLayerCommand(self.document, layer_idx, original_pixels, new_pixels)
+            cmd = ModifyLayerCommand(self.document, layer_idx, before_pixels_full, after_pixels_full, name=name)
             self.tool_manager.commit_command(cmd)
         else:
             # İptal edildi, eski haline dön
@@ -625,3 +1048,115 @@ class MainWindow(QMainWindow):
             return apply_convolution_matrix(pixels, matrix, self.document.width, self.document.height)
             
         self._apply_dialog_effect(ConvolutionDialog, effect_wrapper)
+
+    def start_eyedropper_for_dialog(self, dialog):
+        self._waiting_dialog = dialog
+        self.canvas_scene.picking_target_color = True
+        self.canvas_view.setCursor(Qt.CursorShape.CrossCursor)
+        
+        def on_color_picked(qcolor):
+            self.canvas_scene.picking_target_color = False
+            self.canvas_view.setCursor(Qt.CursorShape.ArrowCursor)
+            self.canvas_scene.color_picked.disconnect(on_color_picked)
+            if self._waiting_dialog:
+                self._waiting_dialog.set_target_color(qcolor)
+                self._waiting_dialog = None
+                
+        self.canvas_scene.color_picked.connect(on_color_picked)
+
+    def _on_color_curve(self):
+        from pixeart.ui.dialogs.effects_dialogs import ColorCurveDialog
+        from pixeart.core.effects_logic import apply_color_curve
+        self._apply_dialog_effect(ColorCurveDialog, apply_color_curve, name="Color Curve")
+
+    def _on_lighting(self):
+        from pixeart.ui.dialogs.effects_dialogs import LightingEffectDialog
+        from pixeart.core.rendering_logic import apply_lighting_pipeline
+        
+        def effect_wrapper(pixels, lx, ly, lz, kd, ks, shininess, num_bands):
+            return apply_lighting_pipeline(
+                pixels, self.document.width, self.document.height,
+                lx, ly, lz, kd, ks, shininess, num_bands
+            )
+            
+        self._apply_dialog_effect(LightingEffectDialog, effect_wrapper, name="FX: Lighting")
+
+    def _on_blur(self):
+        from pixeart.core.effects_logic import apply_convolution_matrix
+        matrix = [[1/9, 1/9, 1/9], [1/9, 1/9, 1/9], [1/9, 1/9, 1/9]]
+        
+        if not self.document or self.document.active_layer_index < 0: return
+        idx = self.document.active_layer_index
+        layer = self.document.layers[idx]
+        before_pixels_full = layer.active_pixels.copy()
+        
+        sel_pixels = self._selection_tool.selection_pixels
+        target_pixels = { (x,y): before_pixels_full[(x,y)] for (x,y) in sel_pixels if (x,y) in before_pixels_full } if sel_pixels else before_pixels_full.copy()
+        
+        transformed = apply_convolution_matrix(target_pixels, matrix, self.document.width, self.document.height)
+        
+        after_pixels_full = before_pixels_full.copy()
+        if sel_pixels:
+            for (x, y) in sel_pixels:
+                if (x, y) in after_pixels_full: del after_pixels_full[(x, y)]
+        for (x, y), color in transformed.items():
+            after_pixels_full[(x, y)] = color
+            
+        from pixeart.core.commands import ModifyLayerCommand
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name="FX: Blur")
+        self.tool_manager.commit_command(cmd)
+
+    def _on_fill(self):
+        if not self.document or self.document.active_layer_index < 0: return
+        idx = self.document.active_layer_index
+        layer = self.document.layers[idx]
+        before_pixels_full = layer.active_pixels.copy()
+        sel = self._selection_tool.selection_pixels
+        c = self.tool_manager.primary_color
+        
+        after_pixels_full = self.document.get_filled_pixels(before_pixels_full, sel, c)
+        
+        from pixeart.core.commands import ModifyLayerCommand
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name="Fill Selection")
+        self.tool_manager.commit_command(cmd)
+
+    def _on_stroke(self):
+        if not self.document or self.document.active_layer_index < 0: return
+        idx = self.document.active_layer_index
+        layer = self.document.layers[idx]
+        before_pixels_full = layer.active_pixels.copy()
+        sel = self._selection_tool.selection_pixels
+        c = self.tool_manager.primary_color
+        
+        after_pixels_full = self.document.get_stroked_pixels(before_pixels_full, sel, c)
+        
+        from pixeart.core.commands import ModifyLayerCommand
+        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name="Stroke Selection")
+        self.tool_manager.commit_command(cmd)
+
+    def _on_paste_new_layer(self):
+        if not self.document or not self._selection_tool.clipboard: return
+        from pixeart.core.layer import Layer
+        from pixeart.core.selection_commands import PasteCommand
+        
+        new_layer = Layer(f"Katman {len(self.document.layers) + 1}")
+        self.document.add_layer(new_layer)
+        self.document.set_active_layer(len(self.document.layers) - 1)
+        
+        cmd = PasteCommand(self.document, self.document.active_layer_index, self._selection_tool.clipboard.copy(), 0, 0, name="Paste as New Layer")
+        self.tool_manager.commit_command(cmd)
+        
+    def _on_paste_new_sprite(self):
+        if not self._selection_tool.clipboard: return
+        # Calculate size of clipboard content
+        xs = [p[0] for p in self._selection_tool.clipboard.keys()]
+        ys = [p[1] for p in self._selection_tool.clipboard.keys()]
+        if not xs or not ys: return
+        
+        w = max(xs) + 1
+        h = max(ys) + 1
+        
+        self._create_document(w, h)
+        from pixeart.core.selection_commands import PasteCommand
+        cmd = PasteCommand(self.document, 0, self._selection_tool.clipboard.copy(), 0, 0, name="Paste")
+        self.tool_manager.commit_command(cmd)

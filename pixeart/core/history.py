@@ -2,6 +2,14 @@ from abc import ABC, abstractmethod
 from typing import List, Callable
 
 class Command(ABC):
+    @property
+    def name(self) -> str:
+        return getattr(self, "_name", "Unknown Command")
+        
+    @name.setter
+    def name(self, val: str):
+        self._name = val
+
     @abstractmethod
     def execute(self) -> None:
         pass
