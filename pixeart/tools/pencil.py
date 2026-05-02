@@ -49,6 +49,7 @@ class PencilTool(BaseTool):
             layer_idx = self.manager.document.active_layer_index
             command = DrawCommand(
                 document=self.manager.document,
+                frame_index=self.manager.document.active_frame_index,
                 layer_index=layer_idx,
                 before_pixels=self.before_pixels.copy(),
                 after_pixels=self.after_pixels.copy()
@@ -77,6 +78,12 @@ class PencilTool(BaseTool):
             for px, py in pixels:
                 if not doc.in_bounds(px, py):
                     continue
+
+                # If a selection exists, restrict drawing to selection pixels (use robust check)
+                sel_tool = self.manager.tools.get("selection") if hasattr(self.manager, 'tools') else None
+                if sel_tool and getattr(sel_tool, 'selection_pixels', None):
+                    if not sel_tool.is_point_selected(px, py):
+                        continue
 
                 current_color = layer.get_pixel(px, py)
 

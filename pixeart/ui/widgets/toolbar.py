@@ -115,7 +115,7 @@ class ToolBarWidget(QWidget):
 
         # --- Seçim Modu ---
         self.combo_sel_mode = QComboBox()
-        self.combo_sel_mode.addItems(["Dikdörtgen", "Lasso"])
+        self.combo_sel_mode.addItems(["Dikdörtgen", "Lasso", "Daire"])
         self.combo_sel_mode.setFixedWidth(80)
         self.combo_sel_mode.setStyleSheet("QComboBox { background:#1e1e1e; color:white; border:1px solid #444; border-radius:2px; font-size:11px; }")
         self.combo_sel_mode.currentIndexChanged.connect(self._on_sel_mode_changed)
@@ -213,7 +213,7 @@ class ToolBarWidget(QWidget):
         self.symmetry_changed.emit(mode)
 
     def _on_sel_mode_changed(self, index):
-        modes = ["rect", "lasso"]
+        modes = ["rect", "lasso", "circle"]
         if 0 <= index < len(modes):
             self.selection_mode_changed.emit(modes[index])
 

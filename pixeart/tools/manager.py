@@ -114,10 +114,41 @@ class ToolManager:
 
     # --- Olay (Event) Yönlendirmeleri ---
     def handle_press(self, x: int, y: int, button: Qt.MouseButton):
+        # If right-click and a selection exists, clear it globally (user expectation)
+        if button == Qt.MouseButton.RightButton:
+            sel = self.tools.get('selection')
+            if sel and getattr(sel, 'selection_pixels', None):
+                sel.clear_selection()
+                return
+
         self.active_tool.on_press(x, y, button)
+
+    def handle_press_f(self, x: float, y: float, button: Qt.MouseButton):
+        """Float-precision press handling. Route to selection tool with floats,
+        otherwise fall back to integer handlers for other tools."""
+        sel = self.tools.get('selection')
+        if self.active_tool_id == 'selection' and sel:
+            sel.on_press(x, y, button)
+            return
+        # fallback: convert to int for legacy tools
+        self.handle_press(int(round(x)), int(round(y)), button)
 
     def handle_drag(self, x: int, y: int, button: Qt.MouseButton):
         self.active_tool.on_drag(x, y, button)
 
+    def handle_drag_f(self, x: float, y: float, button: Qt.MouseButton):
+        sel = self.tools.get('selection')
+        if self.active_tool_id == 'selection' and sel:
+            sel.on_drag(x, y, button)
+            return
+        self.handle_drag(int(round(x)), int(round(y)), button)
+
     def handle_release(self, x: int, y: int, button: Qt.MouseButton):
         self.active_tool.on_release(x, y, button)
+
+    def handle_release_f(self, x: float, y: float, button: Qt.MouseButton):
+        sel = self.tools.get('selection')
+        if self.active_tool_id == 'selection' and sel:
+            sel.on_release(x, y, button)
+            return
+        self.handle_release(int(round(x)), int(round(y)), button)

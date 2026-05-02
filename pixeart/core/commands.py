@@ -9,11 +9,12 @@ class DrawCommand(Command):
     öncesini ve sonrasını kaydederek Geri Al (Undo) / İleri Al (Redo) 
     işlemlerine olanak tanıyan komut sınıfı.
     """
-    def __init__(self, document: Document, layer_index: int, 
+    def __init__(self, document: Document, frame_index: int, layer_index: int, 
                  before_pixels: Dict[Tuple[int, int], Optional[Color]], 
                  after_pixels: Dict[Tuple[int, int], Optional[Color]],
                  name: str = "Pencil/Eraser"):
         self.document = document
+        self.frame_index = frame_index
         self.layer_index = layer_index
         self.before_pixels = before_pixels
         self.after_pixels = after_pixels
@@ -21,10 +22,16 @@ class DrawCommand(Command):
 
     def execute(self) -> None:
         """İleri Al (Redo) tetiklendiğinde veya ilk çizimde yeni pikselleri katmana uygular."""
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
+            return
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
             return
             
-        layer = self.document.layers[self.layer_index]
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         for (x, y), color in self.after_pixels.items():
             if color is None:
                 layer.set_pixel(x, y, Color(0, 0, 0, 0)) # Pikseli sil
@@ -34,10 +41,16 @@ class DrawCommand(Command):
 
     def undo(self) -> None:
         """Geri Al (Undo) tetiklendiğinde eski pikselleri katmana geri yükler."""
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
+            return
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
             return
             
-        layer = self.document.layers[self.layer_index]
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         for (x, y), color in self.before_pixels.items():
             if color is None:
                 layer.set_pixel(x, y, Color(0, 0, 0, 0))
@@ -53,11 +66,12 @@ class ModifyLayerCommand(Command):
     before ile after arasındaki farkı (delta) hesaplar ve depolar.
     Büyük tuvallerde (512x512+) bellek kullanımını ~%80 azaltır.
     """
-    def __init__(self, document: Document, layer_index: int, 
+    def __init__(self, document: Document, frame_index: int, layer_index: int, 
                  before_pixels: Dict[Tuple[int, int], Color], 
                  after_pixels: Dict[Tuple[int, int], Color],
                  name: str = "Modify Layer"):
         self.document = document
+        self.frame_index = frame_index
         self.layer_index = layer_index
         self.name = name
 
@@ -87,9 +101,16 @@ class ModifyLayerCommand(Command):
                 self._changed_pixels_after[key] = a
 
     def execute(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         
         # Silinen pikselleri kaldır
         for (x, y) in self._removed_pixels:
@@ -104,9 +125,16 @@ class ModifyLayerCommand(Command):
         self.document.is_dirty = True
 
     def undo(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         
         # Eklenen pikselleri kaldır
         for (x, y) in self._added_pixels:

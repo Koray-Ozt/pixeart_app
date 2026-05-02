@@ -5,10 +5,11 @@ from pixeart.core.color import Color
 
 
 class MoveSelectionCommand(Command):
-    def __init__(self, document: Document, layer_index: int,
+    def __init__(self, document: Document, frame_index: int, layer_index: int,
                  pixels: Dict[Tuple[int, int], Optional[Color]],
                  dx: int, dy: int, name: str = "Move Selection"):
         self.document = document
+        self.frame_index = frame_index
         self.layer_index = layer_index
         self.pixels = pixels
         self.dx = dx
@@ -16,9 +17,16 @@ class MoveSelectionCommand(Command):
         self.name = name
 
     def execute(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         # Eski konumdaki pikselleri sil
         for (x, y) in self.pixels:
             layer.set_pixel(x, y, Color(0, 0, 0, 0))
@@ -30,9 +38,16 @@ class MoveSelectionCommand(Command):
         self.document.is_dirty = True
 
     def undo(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         # Yeni konumdaki pikselleri sil
         for (x, y) in self.pixels:
             nx, ny = x + self.dx, y + self.dy
@@ -46,10 +61,11 @@ class MoveSelectionCommand(Command):
 
 
 class PasteCommand(Command):
-    def __init__(self, document: Document, layer_index: int,
+    def __init__(self, document: Document, frame_index: int, layer_index: int,
                  pixels: Dict[Tuple[int, int], Optional[Color]],
                  offset_x: int, offset_y: int, name: str = "Paste"):
         self.document = document
+        self.frame_index = frame_index
         self.layer_index = layer_index
         self.pixels = pixels
         self.offset_x = offset_x
@@ -58,9 +74,16 @@ class PasteCommand(Command):
         self._overwritten: Dict[Tuple[int, int], Optional[Color]] = {}
 
     def execute(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         self._overwritten.clear()
         for (x, y), color in self.pixels.items():
             nx, ny = x + self.offset_x, y + self.offset_y
@@ -72,9 +95,16 @@ class PasteCommand(Command):
         self.document.is_dirty = True
 
     def undo(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         for (nx, ny), color in self._overwritten.items():
             if color is None:
                 layer.set_pixel(nx, ny, Color(0, 0, 0, 0))
@@ -84,25 +114,40 @@ class PasteCommand(Command):
 
 
 class DeleteSelectionCommand(Command):
-    def __init__(self, document: Document, layer_index: int,
+    def __init__(self, document: Document, frame_index: int, layer_index: int,
                  pixels: Dict[Tuple[int, int], Optional[Color]], name: str = "Delete"):
         self.document = document
+        self.frame_index = frame_index
         self.layer_index = layer_index
         self.pixels = pixels
         self.name = name
 
     def execute(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         for (x, y) in self.pixels:
             layer.set_pixel(x, y, Color(0, 0, 0, 0))
         self.document.is_dirty = True
 
     def undo(self) -> None:
-        if not (0 <= self.layer_index < len(self.document.layers)):
+        if not (0 <= self.frame_index < len(self.document.frames)):
             return
-        layer = self.document.layers[self.layer_index]
+        frame = self.document.frames[self.frame_index]
+        if not (0 <= self.layer_index < len(frame.layers)):
+            return
+            
+        if self.document.active_frame_index != self.frame_index:
+            self.document.set_active_frame(self.frame_index)
+            
+        layer = frame.layers[self.layer_index]
         for (x, y), color in self.pixels.items():
             if color is not None:
                 layer.set_pixel(x, y, color)

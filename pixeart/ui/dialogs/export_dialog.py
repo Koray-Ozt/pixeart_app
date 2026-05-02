@@ -2,7 +2,13 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QComboBox, QSpinBox, QPushButton, QFormLayout, QFileDialog, QCheckBox
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QBuffer, QIODevice
+import io
+try:
+    from PIL import Image
+    HAS_PILLOW = True
+except ImportError:
+    HAS_PILLOW = False
 
 from pixeart.core.document import Document
 from PyQt6.QtGui import QImage, QPainter, QColor
@@ -39,9 +45,19 @@ class ExportDialog(QDialog):
         form_layout.setSpacing(12)
         
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["PNG", "JPG", "BMP"])
+        formats = ["Tek Kare (PNG)"]
+        if HAS_PILLOW:
+            formats.extend(["Sprite Sheet (PNG)", "Hareketli GIF"])
+        self.format_combo.addItems(formats)
         self.format_combo.currentTextChanged.connect(self._update_format)
         form_layout.addRow("Format:", self.format_combo)
+        
+        self.columns_spin = QSpinBox()
+        self.columns_spin.setRange(1, max(1, len(self.document.frames)))
+        self.columns_spin.setValue(len(self.document.frames))
+        self.columns_row = form_layout.addRow("Sütun Sayısı:", self.columns_spin)
+        self.columns_spin.setVisible(False)
+        form_layout.labelForField(self.columns_spin).setVisible(False)
         
         scale_layout = QHBoxLayout()
         self.scale_spin = QSpinBox()
@@ -89,12 +105,13 @@ class ExportDialog(QDialog):
 
     def _update_format(self, text: str):
         self.export_format = text
-        if text in ["JPG", "BMP"]:
-            self.bg_checkbox.setChecked(False)
-            self.bg_checkbox.setEnabled(False)
-        else:
-            self.bg_checkbox.setEnabled(True)
-            self.bg_checkbox.setChecked(True)
+        
+        is_sprite_sheet = (text == "Sprite Sheet (PNG)")
+        self.columns_spin.setVisible(is_sprite_sheet)
+        
+        form_layout = self.format_combo.parentWidget().layout()
+        if isinstance(form_layout, QFormLayout) and form_layout.labelForField(self.columns_spin):
+            form_layout.labelForField(self.columns_spin).setVisible(is_sprite_sheet)
 
     def _update_size_preview(self, value: int):
         self.export_scale = value
@@ -103,11 +120,14 @@ class ExportDialog(QDialog):
         self.size_preview.setText(f"({new_w} x {new_h} px)")
 
     def _on_export_clicked(self):
-        filter_str = f"{self.export_format} Image (*.{self.export_format.lower()})"
+        ext = "png"
+        if self.export_format == "Hareketli GIF": ext = "gif"
+        
+        filter_str = f"{self.export_format} Image (*.{ext})"
         file_path, _ = QFileDialog.getSaveFileName(
             self, 
             "Görseli Kaydet", 
-            f"pixeart_cizim.{self.export_format.lower()}", 
+            f"pixeart_cizim.{ext}", 
             filter_str
         )
         
@@ -116,18 +136,14 @@ class ExportDialog(QDialog):
             self.keep_transparency = self.bg_checkbox.isChecked()
             self.accept()
 
-    def export_image(self):
-        if not self.export_path:
-            return
-
-        w, h = self.document.width, self.document.height
+    def _render_frame(self, frame, w, h):
         image = QImage(w, h, QImage.Format.Format_ARGB32)
-        if self.keep_transparency and self.export_format == "PNG":
+        if self.keep_transparency and self.export_format in ["Tek Kare (PNG)", "Sprite Sheet (PNG)", "Hareketli GIF"]:
             image.fill(QColor(0, 0, 0, 0))
         else:
             image.fill(QColor(255, 255, 255, 255))
 
-        for layer in self.document.layers:
+        for layer in frame.layers:
             if not layer.is_visible:
                 continue
             for (x, y), color in layer.active_pixels.items():
@@ -138,5 +154,66 @@ class ExportDialog(QDialog):
             new_w = int(w * (self.export_scale / 100.0))
             new_h = int(h * (self.export_scale / 100.0))
             image = image.scaled(new_w, new_h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+            
+        return image
 
-        image.save(self.export_path, self.export_format)
+    def export_image(self):
+        if not self.export_path:
+            return
+
+        w, h = self.document.width, self.document.height
+        
+        if self.export_format == "Hareketli GIF" and HAS_PILLOW:
+            pil_images = []
+            durations = []
+            for frame in self.document.frames:
+                qimg = self._render_frame(frame, w, h)
+                buffer = QBuffer()
+                buffer.open(QIODevice.OpenModeFlag.ReadWrite)
+                qimg.save(buffer, "PNG")
+                pil_img = Image.open(io.BytesIO(buffer.data()))
+                pil_images.append(pil_img)
+                durations.append(frame.duration_ms)
+                
+            if pil_images:
+                pil_images[0].save(
+                    self.export_path,
+                    save_all=True,
+                    append_images=pil_images[1:],
+                    duration=durations,
+                    loop=0,
+                    disposal=2 # clear frame before next
+                )
+        elif self.export_format == "Sprite Sheet (PNG)":
+            cols = self.columns_spin.value()
+            rows = (len(self.document.frames) + cols - 1) // cols
+            
+            scaled_w = w
+            scaled_h = h
+            if self.export_scale != 100:
+                scaled_w = int(w * (self.export_scale / 100.0))
+                scaled_h = int(h * (self.export_scale / 100.0))
+                
+            sheet_w = cols * scaled_w
+            sheet_h = rows * scaled_h
+            
+            sheet = QImage(sheet_w, sheet_h, QImage.Format.Format_ARGB32)
+            if self.keep_transparency:
+                sheet.fill(QColor(0, 0, 0, 0))
+            else:
+                sheet.fill(QColor(255, 255, 255, 255))
+                
+            painter = QPainter(sheet)
+            for i, frame in enumerate(self.document.frames):
+                cx = (i % cols) * scaled_w
+                cy = (i // cols) * scaled_h
+                frame_img = self._render_frame(frame, w, h)
+                painter.drawImage(cx, cy, frame_img)
+            painter.end()
+            sheet.save(self.export_path, "PNG")
+        else:
+            # Normal single frame export (active frame)
+            frame = self.document.active_frame
+            if frame:
+                img = self._render_frame(frame, w, h)
+                img.save(self.export_path, "PNG")

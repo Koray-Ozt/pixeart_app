@@ -34,6 +34,12 @@ class EraserTool(PencilTool):
                 if not doc.in_bounds(px, py):
                     continue
 
+                # Respect selection mask if present (use robust check)
+                sel_tool = self.manager.tools.get("selection") if hasattr(self.manager, 'tools') else None
+                if sel_tool and getattr(sel_tool, 'selection_pixels', None):
+                    if not sel_tool.is_point_selected(px, py):
+                        continue
+
                 current_color = layer.get_pixel(px, py)
 
                 if (px, py) not in self.before_pixels:

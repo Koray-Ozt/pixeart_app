@@ -1,8 +1,11 @@
 import math
 import json
 import logging
+import tempfile
+import os
 from typing import List, Optional, Tuple, Dict
 from .layer import Layer
+from .frame import Frame
 from .color import Color
 
 logger = logging.getLogger(__name__)
@@ -14,11 +17,16 @@ class Document:
             
         self._width = width
         self._height = height
-        self._layers: List[Layer] = []  
-        self._active_layer_index: int = -1
+        
+        # Frame system initialization
+        self._frames: List[Frame] = []
+        self._active_frame_index: int = -1
+        
         self.file_path: Optional[str] = None
         self.is_dirty: bool = False
 
+    # --- Properties ---
+    
     @property
     def width(self) -> int:
         return self._width
@@ -26,61 +34,100 @@ class Document:
     @property
     def height(self) -> int:
         return self._height
+
+    # --- Frame Management ---
+
+    @property
+    def frames(self) -> List[Frame]:
+        return list(self._frames)
+
+    @property
+    def active_frame_index(self) -> int:
+        return self._active_frame_index
+
+    @property
+    def active_frame(self) -> Optional[Frame]:
+        if 0 <= self._active_frame_index < len(self._frames):
+            return self._frames[self._active_frame_index]
+        return None
+
+    def add_frame(self, frame: Frame, index: Optional[int] = None) -> None:
+        if index is None:
+            self._frames.append(frame)
+            self._active_frame_index = len(self._frames) - 1
+        else:
+            self._frames.insert(index, frame)
+            self._active_frame_index = index
+        self.is_dirty = True
+
+    def remove_frame(self, index: int) -> None:
+        if not (0 <= index < len(self._frames)):
+            raise IndexError("Invalid frame index.")
+            
+        del self._frames[index]
         
+        if not self._frames:
+            self._active_frame_index = -1
+        elif self._active_frame_index > index:
+            self._active_frame_index -= 1
+        elif self._active_frame_index == index:
+            self._active_frame_index = min(index, len(self._frames) - 1)
+            
+        self.is_dirty = True
+
+    def set_active_frame(self, index: int) -> None:
+        if 0 <= index < len(self._frames):
+            self._active_frame_index = index
+        else:
+            raise IndexError("Invalid frame index.")
+
+    def duplicate_frame(self, index: int) -> None:
+        if not (0 <= index < len(self._frames)):
+            raise IndexError("Invalid frame index.")
+        cloned_frame = self._frames[index].clone()
+        self.add_frame(cloned_frame, index + 1)
+
+    # --- Layer Management (Pass-through to Active Frame) ---
+
     @property
     def layers(self) -> List[Layer]:
-        return list(self._layers)
+        if self.active_frame:
+            return self.active_frame.layers
+        return []
 
     @property
     def active_layer_index(self) -> int:
-        return self._active_layer_index
+        if self.active_frame:
+            return self.active_frame.active_layer_index
+        return -1
 
     @property
     def active_layer(self) -> Optional[Layer]:
-        if 0 <= self._active_layer_index < len(self._layers):
-            return self._layers[self._active_layer_index]
+        if self.active_frame:
+            return self.active_frame.active_layer
         return None
 
     def add_layer(self, layer: Layer, index: Optional[int] = None) -> None:
-        if index is None:
-            self._layers.append(layer)
-            self._active_layer_index = len(self._layers) - 1
-        else:
-            self._layers.insert(index, layer)
-            self._active_layer_index = index
-        self.is_dirty = True
+        # Eğer hiç kare yoksa, bir tane oluştur (Failsafe)
+        if not self._frames:
+            self.add_frame(Frame())
+            
+        if self.active_frame:
+            self.active_frame.add_layer(layer, index)
+            self.is_dirty = True
 
     def remove_layer(self, index: int) -> None:
-        if not (0 <= index < len(self._layers)):
-            raise IndexError("Invalid layer index.")
-            
-        del self._layers[index]
-        
-        if not self._layers:
-            self._active_layer_index = -1
-        elif self._active_layer_index > index:
-            self._active_layer_index -= 1
-        elif self._active_layer_index == index:
-            self._active_layer_index = min(index, len(self._layers) - 1)
-            
-        self.is_dirty = True
+        if self.active_frame:
+            self.active_frame.remove_layer(index)
+            self.is_dirty = True
 
     def set_active_layer(self, index: int) -> None:
-        if 0 <= index < len(self._layers):
-            self._active_layer_index = index
-        else:
-            raise IndexError("Invalid layer index.")
+        if self.active_frame:
+            self.active_frame.set_active_layer(index)
 
     def reorder_layer(self, source_index: int, dest_index: int) -> None:
-        if 0 <= source_index < len(self._layers) and 0 <= dest_index < len(self._layers):
-            layer = self._layers.pop(source_index)
-            self._layers.insert(dest_index, layer)
-            if self._active_layer_index == source_index:
-                self._active_layer_index = dest_index
-            elif source_index < self._active_layer_index <= dest_index:
-                self._active_layer_index -= 1
-            elif dest_index <= self._active_layer_index < source_index:
-                self._active_layer_index += 1
+        if self.active_frame:
+            self.active_frame.reorder_layer(source_index, dest_index)
             self.is_dirty = True
 
     # --- Dönüşüm ve Kaydırma (Transform & Shift) ---
@@ -183,29 +230,35 @@ class Document:
         Atomik yazma: önce geçici dosyaya yaz, başarılıysa yer değiştir.
         """
         data = {
-            "version": 1,
+            "version": 2,
             "width": self._width,
             "height": self._height,
-            "active_layer_index": self._active_layer_index,
-            "layers": []
+            "active_frame_index": self._active_frame_index,
+            "frames": []
         }
-        for layer in self._layers:
-            layer_data = {
-                "name": layer.name,
-                "is_visible": layer.is_visible,
-                "is_locked": layer.is_locked,
-                "opacity": layer.opacity,
-                "blend_mode": getattr(layer, "blend_mode", "Normal"),
-                "pixels": []
+        for frame in self._frames:
+            frame_data = {
+                "duration_ms": frame.duration_ms,
+                "active_layer_index": frame.active_layer_index,
+                "layers": []
             }
-            for (x, y), color in layer.active_pixels.items():
-                layer_data["pixels"].append({
-                    "x": x, "y": y,
-                    "r": color.r, "g": color.g, "b": color.b, "a": color.a
-                })
-            data["layers"].append(layer_data)
+            for layer in frame.layers:
+                layer_data = {
+                    "name": layer.name,
+                    "is_visible": layer.is_visible,
+                    "is_locked": layer.is_locked,
+                    "opacity": layer.opacity,
+                    "blend_mode": getattr(layer, "blend_mode", "Normal"),
+                    "pixels": []
+                }
+                for (x, y), color in layer.active_pixels.items():
+                    layer_data["pixels"].append({
+                        "x": x, "y": y,
+                        "r": color.r, "g": color.g, "b": color.b, "a": color.a
+                    })
+                frame_data["layers"].append(layer_data)
+            data["frames"].append(frame_data)
         
-        import tempfile, os
         tmp_fd = None
         tmp_path = None
         try:
@@ -256,21 +309,47 @@ class Document:
         
         try:
             doc = cls(data["width"], data["height"])
-            doc._active_layer_index = data.get("active_layer_index", 0)
             
-            for layer_data in data.get("layers", []):
-                layer = Layer(layer_data.get("name", "Katman"))
-                layer.is_visible = layer_data.get("is_visible", True)
-                layer.is_locked = layer_data.get("is_locked", False)
-                layer.opacity = layer_data.get("opacity", 1.0)
-                layer.blend_mode = layer_data.get("blend_mode", "Normal")
-                
-                for p in layer_data.get("pixels", []):
-                    layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
+            version = data.get("version", 1)
+            
+            if version == 1:
+                # Migrate version 1 to version 2 (single frame)
+                frame = Frame()
+                for layer_data in data.get("layers", []):
+                    layer = Layer(layer_data.get("name", "Katman"))
+                    layer.is_visible = layer_data.get("is_visible", True)
+                    layer.is_locked = layer_data.get("is_locked", False)
+                    layer.opacity = layer_data.get("opacity", 1.0)
+                    layer.blend_mode = layer_data.get("blend_mode", "Normal")
                     
-                doc.add_layer(layer)
+                    for p in layer_data.get("pixels", []):
+                        layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
+                        
+                    frame.add_layer(layer)
+                    
+                frame.set_active_layer(data.get("active_layer_index", 0))
+                doc.add_frame(frame)
+                doc.set_active_frame(0)
+            else:
+                # Version 2+ logic
+                for frame_data in data.get("frames", []):
+                    frame = Frame(duration_ms=frame_data.get("duration_ms", 100))
+                    for layer_data in frame_data.get("layers", []):
+                        layer = Layer(layer_data.get("name", "Katman"))
+                        layer.is_visible = layer_data.get("is_visible", True)
+                        layer.is_locked = layer_data.get("is_locked", False)
+                        layer.opacity = layer_data.get("opacity", 1.0)
+                        layer.blend_mode = layer_data.get("blend_mode", "Normal")
+                        
+                        for p in layer_data.get("pixels", []):
+                            layer.set_pixel(p["x"], p["y"], Color(p["r"], p["g"], p["b"], p.get("a", 255)))
+                            
+                        frame.add_layer(layer)
+                    
+                    frame.set_active_layer(frame_data.get("active_layer_index", 0))
+                    doc.add_frame(frame)
                 
-            doc._active_layer_index = data.get("active_layer_index", 0)
+                doc.set_active_frame(data.get("active_frame_index", 0))
                 
             doc.file_path = file_path
             doc.is_dirty = False

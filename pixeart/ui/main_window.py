@@ -9,6 +9,7 @@ from PyQt6.QtGui import QAction, QActionGroup, QColor, QShortcut, QKeySequence
 from pixeart.core.history import History
 from pixeart.core.document import Document
 from pixeart.core.layer import Layer
+from pixeart.core.frame import Frame
 
 from pixeart.ui.canvas.scene import CanvasScene
 from pixeart.ui.canvas.view import CanvasView
@@ -22,6 +23,9 @@ from pixeart.ui.widgets.navigator import NavigatorWidget
 from pixeart.tools.manager import ToolManager, SymmetryMode
 from pixeart.tools.base_tool import BrushShape
 from pixeart.tools.selection import SelectionTool
+
+from pixeart.ui.animation_controller import AnimationController
+from pixeart.ui.widgets.timeline import TimelineWidget
 
 
 class MainWindow(QMainWindow):
@@ -54,6 +58,9 @@ class MainWindow(QMainWindow):
 
         # Undo/Redo aksiyonlarının durumunu güncellemek için history callback
         self.history.register_callback(self._update_undo_redo_actions)
+
+        self.animation_controller = AnimationController()
+        self.animation_controller.frame_changed.connect(self._on_frame_changed)
 
         self._init_ui()
         self._connect_signals()
@@ -180,6 +187,13 @@ class MainWindow(QMainWindow):
         self.history_panel = HistoryPanel(self.history)
         create_scrollable_dock(self.history_dock, self.history_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_dock)
+
+        # 6. Timeline
+        self.timeline_dock = QDockWidget("Zaman Çizelgesi", self)
+        self.timeline_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.TopDockWidgetArea)
+        self.timeline_widget = TimelineWidget(self.animation_controller)
+        self.timeline_dock.setWidget(self.timeline_widget)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
 
     def _create_menus(self):
         """Üst menü çubuğunu ve diyalog bağlantılarını oluşturur."""
@@ -399,6 +413,7 @@ class MainWindow(QMainWindow):
         panels_menu.addAction(self.color_dock.toggleViewAction())
         panels_menu.addAction(self.navigator_dock.toggleViewAction())
         panels_menu.addAction(self.history_dock.toggleViewAction())
+        panels_menu.addAction(self.timeline_dock.toggleViewAction())
 
         view_menu.addSeparator()
 
@@ -513,7 +528,7 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
 
         timeline_action = QAction("Timeline", self)
-        timeline_action.triggered.connect(lambda: self.statusBar.showMessage("Timeline henüz aktif değil.", 3000))
+        timeline_action.triggered.connect(lambda: self.timeline_dock.setVisible(not self.timeline_dock.isVisible()))
         view_menu.addAction(timeline_action)
 
         preview_action = QAction("Preview", self)
@@ -549,11 +564,20 @@ class MainWindow(QMainWindow):
 
         self.color_palette.primary_color_changed.connect(self._on_primary_color_changed)
         self.color_palette.secondary_color_changed.connect(self._on_secondary_color_changed)
+        self.color_palette.extract_palette_requested.connect(self._on_extract_palette)
         self.tool_manager.color_palette = self.color_palette
 
         self.canvas_scene.pixel_clicked.connect(self.tool_manager.handle_press)
         self.canvas_scene.pixel_dragged.connect(self.tool_manager.handle_drag)
         self.canvas_scene.pixel_released.connect(self.tool_manager.handle_release)
+
+        # Also connect float-precision signals for tools that need sub-pixel accuracy
+        try:
+            self.canvas_scene.pixel_clicked_f.connect(self.tool_manager.handle_press_f)
+            self.canvas_scene.pixel_dragged_f.connect(self.tool_manager.handle_drag_f)
+            self.canvas_scene.pixel_released_f.connect(self.tool_manager.handle_release_f)
+        except Exception:
+            pass
 
         # Navigator güncelleme sinyali
         self.canvas_view.zoom_changed.connect(lambda z: self.navigator.update_preview())
@@ -567,6 +591,12 @@ class MainWindow(QMainWindow):
         self.layers_dock.hide()
         self.color_dock.hide()
         self.navigator_dock.hide()
+        self.timeline_dock.hide()
+        # Hide history dock on landing page to avoid right-side dock appearing
+        try:
+            self.history_dock.hide()
+        except AttributeError:
+            pass
 
     def _show_editor(self):
         self.stacked.setCurrentIndex(1)
@@ -574,6 +604,12 @@ class MainWindow(QMainWindow):
         self.layers_dock.show()
         self.color_dock.show()
         self.navigator_dock.show()
+        self.timeline_dock.show()
+        # Show history dock when editor is active
+        try:
+            self.history_dock.show()
+        except AttributeError:
+            pass
 
     # --- Dosya İşlemleri ---
 
@@ -627,6 +663,8 @@ class MainWindow(QMainWindow):
             self.canvas_view.reset_view()
             self.navigator.set_canvas(self.canvas_view, self.canvas_scene)
             self.navigator.update_preview()
+            
+            self.timeline_widget.set_document(self.document)
 
             self.history = History()
             self.history.register_callback(self._update_undo_redo_actions)
@@ -645,6 +683,11 @@ class MainWindow(QMainWindow):
 
     def _create_document(self, width: int, height: int):
         self.document = Document(width, height)
+        
+        # İlk kareyi ve katmanı oluştur
+        first_frame = Frame()
+        self.document.add_frame(first_frame)
+        
         bg_layer = Layer("Arkaplan")
         self.document.add_layer(bg_layer)
 
@@ -658,6 +701,8 @@ class MainWindow(QMainWindow):
         self.navigator.set_canvas(self.canvas_view, self.canvas_scene)
         self.navigator.update_preview()
 
+        self.timeline_widget.set_document(self.document)
+
         self.statusBar.showMessage(f"Yeni belge oluşturuldu: {width}x{height}", 3000)
 
     # --- SİNYAL YAKALAYICILAR (Slotlar) ---
@@ -667,6 +712,12 @@ class MainWindow(QMainWindow):
 
     def _on_layer_visibility_changed(self):
         self.canvas_scene.sync_layers()
+
+    def _on_frame_changed(self, frame_index: int):
+        self._selection_tool.clear_selection()
+        self.canvas_scene.sync_layers()
+        self.layer_panel.set_document(self.document)
+        self.navigator.update_preview()
 
     def _on_tool_changed(self, tool_code: str):
         self.statusBar.showMessage(f"Araç seçildi: {tool_code}", 2000)
@@ -700,6 +751,24 @@ class MainWindow(QMainWindow):
 
     def _on_secondary_color_changed(self, color: QColor):
         self.tool_manager.set_secondary_color(color)
+
+    def _on_extract_palette(self):
+        """Tuvaldeki tüm kare ve katmanlardaki benzersiz renkleri çıkarır."""
+        if not self.document:
+            return
+        
+        unique_colors = set()
+        for frame in self.document.frames:
+            for layer in frame.layers:
+                for color in layer.active_pixels.values():
+                    if not color.is_transparent:
+                        unique_colors.add(color.to_hex())
+        
+        if unique_colors:
+            self.color_palette.set_palette(list(unique_colors))
+            self.statusBar.showMessage(f"Tuvalden {len(unique_colors)} benzersiz renk çıkarıldı.", 3000)
+        else:
+            self.statusBar.showMessage("Tuvalde henüz renkli piksel yok.", 3000)
 
     def _on_toggle_onion(self, checked: bool):
         self.canvas_scene.set_onion_skinning(checked)
@@ -948,7 +1017,7 @@ class MainWindow(QMainWindow):
             after_pixels_full = transformed_pixels
             
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name=f"Transform: {t_type}")
+        cmd = ModifyLayerCommand(self.document, self.document.active_frame_index, idx, before_pixels_full, after_pixels_full, name=f"Transform: {t_type}")
         self.tool_manager.commit_command(cmd)
 
     # --- Hızlı Efekt İşlemleri ---
@@ -989,7 +1058,7 @@ class MainWindow(QMainWindow):
             after_pixels_full = transformed_pixels
             
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name=f"FX: {e_type}")
+        cmd = ModifyLayerCommand(self.document, self.document.active_frame_index, idx, before_pixels_full, after_pixels_full, name=f"FX: {e_type}")
         self.tool_manager.commit_command(cmd)
 
     # --- Diyaloglu Efekt İşlemleri (Preview Destekli) ---
@@ -1063,7 +1132,7 @@ class MainWindow(QMainWindow):
                     layer.set_pixel(x, y, c)
                 
             from pixeart.core.commands import ModifyLayerCommand
-            cmd = ModifyLayerCommand(self.document, layer_idx, before_pixels_full, after_pixels_full, name=name)
+            cmd = ModifyLayerCommand(self.document, self.document.active_frame_index, layer_idx, before_pixels_full, after_pixels_full, name=name)
             self.tool_manager.commit_command(cmd)
         else:
             # İptal edildi, eski haline dön
@@ -1154,7 +1223,7 @@ class MainWindow(QMainWindow):
             after_pixels_full[(x, y)] = color
             
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name="FX: Blur")
+        cmd = ModifyLayerCommand(self.document, self.document.active_frame_index, idx, before_pixels_full, after_pixels_full, name="FX: Blur")
         self.tool_manager.commit_command(cmd)
 
     def _on_fill(self):
@@ -1168,7 +1237,7 @@ class MainWindow(QMainWindow):
         after_pixels_full = self.document.get_filled_pixels(before_pixels_full, sel, c)
         
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name="Fill Selection")
+        cmd = ModifyLayerCommand(self.document, self.document.active_frame_index, idx, before_pixels_full, after_pixels_full, name="Fill Selection")
         self.tool_manager.commit_command(cmd)
 
     def _on_stroke(self):
@@ -1182,7 +1251,7 @@ class MainWindow(QMainWindow):
         after_pixels_full = self.document.get_stroked_pixels(before_pixels_full, sel, c)
         
         from pixeart.core.commands import ModifyLayerCommand
-        cmd = ModifyLayerCommand(self.document, idx, before_pixels_full, after_pixels_full, name="Stroke Selection")
+        cmd = ModifyLayerCommand(self.document, self.document.active_frame_index, idx, before_pixels_full, after_pixels_full, name="Stroke Selection")
         self.tool_manager.commit_command(cmd)
 
     def _on_paste_new_layer(self):
@@ -1194,7 +1263,7 @@ class MainWindow(QMainWindow):
         self.document.add_layer(new_layer)
         self.document.set_active_layer(len(self.document.layers) - 1)
         
-        cmd = PasteCommand(self.document, self.document.active_layer_index, self._selection_tool.clipboard.copy(), 0, 0, name="Paste as New Layer")
+        cmd = PasteCommand(self.document, self.document.active_frame_index, self.document.active_layer_index, self._selection_tool.clipboard.copy(), 0, 0, name="Paste as New Layer")
         self.tool_manager.commit_command(cmd)
         
     def _on_paste_new_sprite(self):
@@ -1209,5 +1278,5 @@ class MainWindow(QMainWindow):
         
         self._create_document(w, h)
         from pixeart.core.selection_commands import PasteCommand
-        cmd = PasteCommand(self.document, 0, self._selection_tool.clipboard.copy(), 0, 0, name="Paste")
+        cmd = PasteCommand(self.document, self.document.active_frame_index, 0, self._selection_tool.clipboard.copy(), 0, 0, name="Paste")
         self.tool_manager.commit_command(cmd)
