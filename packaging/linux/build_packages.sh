@@ -12,6 +12,7 @@ $PYTHON -m pip install -r requirements.txt pyinstaller || true
 rm -rf build dist
 pyinstaller --noconfirm --onefile --name PixeArt pixeart/main.py
 
+# Prepare temporary package directory for system packages
 PKGDIR=$(mktemp -d)
 mkdir -p "$PKGDIR/usr/bin"
 cp dist/PixeArt "$PKGDIR/usr/bin/pixeart"
@@ -30,17 +31,34 @@ Type=Application
 Categories=Graphics;2DGraphics;
 EOF
 
+# If fpm is available, create native packages
 if command -v fpm >/dev/null 2>&1; then
-  echo "Creating .deb and .rpm with fpm..."
+  echo "Creating .deb, .rpm and pacman (Arch) with fpm..."
   fpm -s dir -t deb -n pixeart -v "$VER" -C "$PKGDIR" --description "PixeArt - Pixel art editor" .
   fpm -s dir -t rpm -n pixeart -v "$VER" -C "$PKGDIR" --description "PixeArt - Pixel art editor" .
+  # Create pacman package for Arch-based distros
+  fpm -s dir -t pacman -n pixeart -v "$VER" -C "$PKGDIR" --description "PixeArt - Pixel art editor" .
   mkdir -p artifacts
-  mv *.deb *.rpm artifacts/ || true
+  # Move known package types into artifacts; use globs to catch pacman extensions
+  mv -- *.deb *.rpm *.pkg.* artifacts/ 2>/dev/null || true
 else
   echo "fpm not found; artifacts left in $PKGDIR for manual packaging."
 fi
 
-tar -czf pixeart-$VER.tar.gz -C dist PixeArt
+# Create a bundled tarball that includes the executable and resource files (icons, etc.)
+BUNDLEDIR=$(mktemp -d)
+mkdir -p "$BUNDLEDIR/pixeart"
+cp -a dist/PixeArt "$BUNDLEDIR/pixeart/PixeArt"
+if [ -d "pixeart/resources" ]; then
+  cp -a pixeart/resources "$BUNDLEDIR/pixeart/resources"
+fi
+if [ -f "README.md" ]; then
+  cp README.md "$BUNDLEDIR/"
+fi
+tar -czf pixeart-$VER.tar.gz -C "$BUNDLEDIR" .
+
+mkdir -p artifacts
+cp -a pixeart-$VER.tar.gz artifacts/ || true
 echo "Artifacts:"
 ls -la artifacts || true
 echo "Done."

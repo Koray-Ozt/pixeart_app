@@ -39,3 +39,43 @@ Thumbs.db
 
 # ─── Proje Spesifik ─────────────────────────────────────
 *.pixe
+
+# ─── Packaging & Build Artifacts ─────────────────────────
+artifacts/
+pip-wheel-metadata/
+*.whl
+*.rpm
+*.msi
+*.exe
+*.AppImage
+*.deb
+*.tar.gz
+
+# Ignore packaging build directories
+packaging/**/dist/
+packaging/**/build/
+packaging/**/out/
+packaging/**/artifacts/
+
+# Local envs and secrets
+.env
+.env.*
+secrets.yaml
+local_settings.py
+
+# Logs and temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pip-delete-this-directory.txt
+.cache/
+tmp/
+temp/
+
+# Tools & virtual envs
+.tox/
+.eggs/
+
+# Node
+node_modules/
