@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixeart"
+version = "1.0.0-alpha"
+description = "A Modern, High-Performance Pixel Art Editor built with Python & PyQt6"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [ { name = "Koray" } ]
+dependencies = [
+    "numpy==2.4.4",
+    "PyQt6==6.11.0",
+    "PyQt6-Qt6==6.11.0",
+    "PyQt6_sip==13.11.1",
+    "scipy==1.17.1",
+]
+
+[project.scripts]
+pixeart = "pixeart.main:main"

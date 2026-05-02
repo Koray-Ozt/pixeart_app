@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="PixeArt" Language="1033" Version="$(var.Version)" Manufacturer="Koray" UpgradeCode="PUT-GUID-HERE">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <MajorUpgrade DowngradeErrorMessage="A later version of [ProductName] is already installed." />
+    <MediaTemplate />
+    <Feature Id="MainProgram" Title="PixeArt" Level="1">
+      <ComponentGroupRef Id="PixeArtFiles" />
+    </Feature>
+  </Product>
+</Wix>

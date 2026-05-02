@@ -1,0 +1,18 @@
+pkgname=pixeart
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="PixeArt - Pixel art editor"
+arch=('x86_64')
+url="https://github.com/Koray-Ozt/pixeart_app"
+license=('MIT')
+depends=('python' 'python-pyqt6')
+source=("pixeart-$pkgver.tar.gz")
+md5sums=('SKIP')
+
+package() {
+  install -Dm755 dist/PixeArt "$pkgdir/usr/bin/pixeart"
+  install -Dm644 packaging/icons/pixeart.desktop "$pkgdir/usr/share/applications/pixeart.desktop"
+  if [ -f packaging/icons/pixeart.png ]; then
+    install -Dm644 packaging/icons/pixeart.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/pixeart.png"
+  fi
+}

@@ -1,0 +1,129 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (default 1.0.0-alpha)'
+        required: false
+        default: '1.0.0-alpha'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Determine version
+        id: setver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VER=${GITHUB_REF#refs/tags/}
+          else
+            VER='${{ github.event.inputs.version }}'
+          fi
+          if [ -z "$VER" ]; then
+            VER=1.0.0-alpha
+          fi
+          echo "VERSION=$VER" >> $GITHUB_ENV
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y ruby ruby-dev build-essential rpm dpkg-dev
+
+      - name: Install fpm
+        run: sudo gem install --no-document fpm
+
+      - name: Install python deps
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build packages
+        run: bash packaging/linux/build_packages.sh $VERSION
+
+      - name: Upload artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            artifacts/*.deb
+            artifacts/*.rpm
+            pixeart-*.tar.gz
+
+      - name: Install GitHub CLI
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
+
+      - name: Upload artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          FILES=""
+          if compgen -G "artifacts/*" >/dev/null; then FILES="$FILES artifacts/*"; fi
+          if compgen -G "pixeart-*.tar.gz" >/dev/null; then FILES="$FILES pixeart-*.tar.gz"; fi
+          if [ -z "$FILES" ]; then echo "No artifacts to upload"; exit 0; fi
+          gh release upload "$VERSION" $FILES --clobber
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Determine version
+        shell: powershell
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/*') { $ver = $env:GITHUB_REF.Substring(10) } else { $ver = '${{ github.event.inputs.version }}' }
+          if (-not $ver) { $ver = '1.0.0-alpha' }
+          echo "VERSION=$ver" >> $env:GITHUB_ENV
+
+      - name: Install Python deps
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+
+      - name: Install WiX Toolset
+        shell: powershell
+        run: |
+          choco install wixtoolset -y
+
+      - name: Build EXE with PyInstaller
+        run: pyinstaller --noconfirm --onefile --name PixeArt pixeart/main.py
+
+      - name: Build MSI (WiX)
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy ByPass -File packaging/windows/build_msi.ps1 -Version $env:VERSION
+
+      - name: Upload MSI (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-msi
+          path: pixeart-*.msi
+
+      - name: Install GitHub CLI
+        shell: powershell
+        run: |
+          choco install gh -y
+
+      - name: Upload MSI to GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $files = Get-ChildItem -Path pixeart-*.msi -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+          if (-not $files) { Write-Output "No MSI artifacts to upload"; exit 0 }
+          gh release upload $env:VERSION $files --clobber
